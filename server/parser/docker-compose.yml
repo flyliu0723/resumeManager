@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  resumeparser:
+    build:
+      context: ./parser
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./parser/models:/app/models
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  node-app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - resumeparser
+    environment:
+      - RESUME_PARSER_URL=http://resumeparser:5001
+    restart: unless-stopped
