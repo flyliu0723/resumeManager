@@ -25,6 +25,7 @@ class UnifiedParser {
       }
 
       const result = await this.parseWithAI(text)
+      console.log("🚀 ~ UnifiedParser ~ parse ~ result:", result)
 
       const duration = (Date.now() - startTime) / 1000
 
@@ -163,18 +164,29 @@ class UnifiedParser {
     const baseName = path.basename(fileName, ext)
 
     let cleaned = baseName
-      .replace(/^\d+_/, '')
+      .replace(/^\d+[._]/, '')
       .replace(/[-_]+/g, ' ')
       .trim()
 
-    const firstWord = cleaned.split(' ')[0]
+    const parts = cleaned.split(' ').filter(p => p.length > 0)
 
-    if (firstWord && firstWord.length >= 2 && firstWord.length <= 10 && !/^\d+$/.test(firstWord)) {
-      return firstWord
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i]
+      if (/^[\u4e00-\u9fa5]{2,5}$/.test(part)) {
+        return part
+      }
     }
 
-    if (cleaned.length >= 2 && cleaned.length <= 10 && !/^\d+$/.test(cleaned)) {
-      return cleaned
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i]
+      if (part.length >= 2 && part.length <= 10 && !/^\d+$/.test(part) && !/^[a-zA-Z]/.test(part)) {
+        return part
+      }
+    }
+
+    const firstPart = parts[0]
+    if (firstPart && firstPart.length >= 2 && firstPart.length <= 10 && !/^\d+$/.test(firstPart)) {
+      return firstPart
     }
 
     return null

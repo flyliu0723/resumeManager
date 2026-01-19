@@ -36,18 +36,19 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
     console.log('Filename:', info.filename, 'type:', typeof info.filename)
     console.log('Encoding:', info.encoding)
     console.log('MimeType:', info.mimeType)
-    
+
     type = info.mimeType
-    
+    recordFileName = info.filename || 'unknown'
+
     const timestamp = Date.now()
-    const ext = path.extname(name)
-    const baseName = path.basename(name, ext)
-    
+    const originalName = info.filename || 'file'
+    const ext = path.extname(originalName)
+    const baseName = path.basename(originalName, ext)
+
     // 使用时间戳和原始文件名
     const fileName = `${timestamp}_${baseName}${ext}`
-    recordFileName = info.filename
     filePath = path.join(UPLOAD_DIR, fileName)
-    
+
     console.log('保存路径:', filePath)
     
     tempFilePath = filePath + '.tmp'

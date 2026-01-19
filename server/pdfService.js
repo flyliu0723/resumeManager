@@ -2,14 +2,28 @@ const fs = require('fs')
 const path = require('path')
 
 async function extractTextFromFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    console.error('文件不存在:', filePath)
+    return ''
+  }
+
   const ext = path.extname(filePath).toLowerCase()
 
-  if (ext === '.pdf') {
+  if (ext === '.pdf' || isPdfByContent(filePath)) {
     return await extractTextFromPDF(filePath)
   } else if (ext === '.docx' || ext === '.doc') {
     return await extractTextFromDocx(filePath)
   } else {
     return extractTextFromText(filePath)
+  }
+}
+
+function isPdfByContent(filePath) {
+  try {
+    const buffer = fs.readFileSync(filePath, null)
+    return buffer.length > 4 && buffer.slice(0, 4).toString() === '%PDF'
+  } catch (e) {
+    return false
   }
 }
 
@@ -30,9 +44,9 @@ async function extractTextFromPDF(filePath) {
 
     const dataBuffer = fs.readFileSync(filePath)
 
-    const firstBytes = dataBuffer.slice(0, 10).toString('hex')
-    if (!firstBytes.startsWith('25504446')) {
-      console.error('不是有效的PDF文件，文件头:', firstBytes)
+    // 验证PDF头
+    if (dataBuffer.length < 5 || dataBuffer.slice(0, 4).toString() !== '%PDF') {
+      console.error('不是有效的PDF文件')
       return ''
     }
 
