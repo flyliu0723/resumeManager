@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Resume Parser | Home{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center" style="margin-top: 1rem;">
+    <div class="col-lg-6 col-md-8">
+        <div class="card shadow-md">
+            <div class="card-body p-5">
+                <h2 class="text-center mb-4" style="color: var(--primary);">Upload Resume</h2>
+                <p class="text-muted text-center mb-4">Upload CVs to extract entities and generate summaries instantly.</p>
+
+                {% if avg_processing_time > 0 %}
+                <div class="alert alert-secondary text-center mb-4 border-0" role="alert" style="background-color: #EEF2FF; color: var(--primary);">
+                    <i class="fas fa-bolt mr-2"></i> Average Processing Time: <strong>{{ avg_processing_time }}s</strong>
+                </div>
+                {% endif %}
+
+                <form method="POST" id="upload-form" enctype="multipart/form-data" action="{% url 'homepage' %}">
+                    {% csrf_token %}
+                    <div class="form-group mb-4">
+                        <label for="id_tag" class="font-weight-bold ml-1 text-muted">Tag (Optional)</label>
+                        <input type="text" name="tag" id="id_tag" class="form-control" placeholder="e.g. Java Developers, Q1 Hiring">
+                    </div>
+
+                    <div class="upload-area p-5 text-center mb-4" id="drop-zone" style="border: 2px dashed #E0E7FF; border-radius: 12px; background-color: #F8FAFC; cursor: pointer; transition: all 0.3s;">
+                        <input type="file" name="resume" id="id_resume" multiple class="d-none" accept=".pdf,.docx,.doc,.txt">
+                        <div id="drop-zone-content">
+                            <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color: #4F46E5;"></i>
+                            <h5 class="font-weight-bold" style="color: #475569;">Drag & Drop files here</h5>
+                            <p class="text-muted small mb-0">or click to browse from your computer</p>
+                            <p class="text-muted small mt-2">Supports PDF, DOCX, TXT</p>
+                        </div>
+                        <div id="file-preview" style="display: none;">
+                            <i class="fas fa-file-alt fa-2x mb-2" style="color: #4F46E5;"></i>
+                            <h6 class="font-weight-bold text-primary" id="file-count">0 files selected</h6>
+                            <p class="text-muted small" id="file-names"></p>
+                            <button type="button" class="btn btn-sm btn-outline-danger mt-2" id="clear-files">Remove All</button>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="import" name="import" class="btn btn-primary btn-block btn-lg shadow-sm" style="opacity: 0.6; pointer-events: none;">
+                        <i class="fas fa-magic mr-2"></i> Parse Resumes
+                    </button>
+
+            <!-- Progress Container -->
+            <div id="progress-container" style="display: none; margin-top: 20px;">
+                <h5 style="margin-bottom: 15px;">Processing Queue</h5>
+                <ul id="file-list" class="list-group" style="margin-bottom: 20px;">
+                    <!-- List items will be injected here -->
+                </ul>
+                <div id="status-message" class="alert alert-info" style="display: none;">
+                    Processing files... Please do not close the window.
+                </div>
+                <a href="{% url 'resumes_list' %}" id="data-page-btn" class="btn btn-primary btn-block"
+                    style="display: none; border-radius: 0;">Go to Data Page</a>
+            </div>
+
+            <script>
+                // --- Drag & Drop Logic ---
+                const dropZone = document.getElementById('drop-zone');
+                const fileInput = document.getElementById('id_resume');
+                const importBtn = document.getElementById('import');
+                const dropContent = document.getElementById('drop-zone-content');
+                const filePreview = document.getElementById('file-preview');
+                const fileCount = document.getElementById('file-count');
+                const fileNames = document.getElementById('file-names');
+                const clearBtn = document.getElementById('clear-files');
+
+                // Trigger file input on click
+                dropZone.addEventListener('click', () => fileInput.click());
+
+                // Prevent bubbling on clear button
+                clearBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    fileInput.value = '';
+                    handleFiles([]);
+                });
+
+                // Drag Events
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, preventDefaults, false);
+                });
+
+                function preventDefaults(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+
+                ['dragenter', 'dragover'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, () => dropZone.style.backgroundColor = '#EEF2FF', false);
+                });
+
+                ['dragleave', 'drop'].forEach(eventName => {
+                    dropZone.addEventListener(eventName, () => dropZone.style.backgroundColor = '#F8FAFC', false);
+                });
+
+                // Handle Drop
+                dropZone.addEventListener('drop', handleDrop, false);
+
+                function handleDrop(e) {
+                    const dt = e.dataTransfer;
+                    const files = dt.files;
+                    fileInput.files = files; // Assign dropped files to input
+                    handleFiles(files);
+                }
+
+                // Handle Input Change
+                fileInput.addEventListener('change', function() {
+                    handleFiles(this.files);
+                });
+
+                function handleFiles(files) {
+                    if (files.length > 0) {
+                        dropContent.style.display = 'none';
+                        filePreview.style.display = 'block';
+                        fileCount.innerText = `${files.length} file(s) selected`;
+                        
+                        // Show first 3 names
+                        const names = Array.from(files).map(f => f.name).slice(0, 3);
+                        if (files.length > 3) names.push(`+ ${files.length - 3} more`);
+                        fileNames.innerText = names.join(', ');
+
+                        // Enable Submit
+                        importBtn.style.opacity = '1';
+                        importBtn.style.pointerEvents = 'auto';
+                    } else {
+                        dropContent.style.display = 'block';
+                        filePreview.style.display = 'none';
+                        importBtn.style.opacity = '0.6';
+                        importBtn.style.pointerEvents = 'none';
+                    }
+                }
+
+                // --- Existing Submission Logic ---
+                document.getElementById('upload-form').addEventListener('submit', async function (e) {
+                    e.preventDefault();
+
+                    const fileInput = document.getElementById('id_resume');
+                    const files = fileInput.files;
+                    if (files.length === 0) return;
+
+                    const progressContainer = document.getElementById('progress-container');
+                    const fileList = document.getElementById('file-list');
+                    const statusMessage = document.getElementById('status-message');
+                    const submitBtn = document.getElementById('import');
+                    const dataPageBtn = document.getElementById('data-page-btn');
+                    const csrfToken = document.getElementsByName('csrfmiddlewaretoken')[0].value;
+
+                    // UI Reset
+                    progressContainer.style.display = 'block';
+                    fileList.innerHTML = '';
+                    statusMessage.style.display = 'block';
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = 'Processing...';
+
+                    // Generate File Queue UI
+                    Array.from(files).forEach((file, index) => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                        li.id = `file-${index}`;
+                        li.innerHTML = `
+                            ${file.name}
+                            <span class="badge badge-secondary badge-pill status-badge">Pending</span>
+                        `;
+                        fileList.appendChild(li);
+                    });
+
+                    // Sequential Upload
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const li = document.getElementById(`file-${i}`);
+                        const badge = li.querySelector('.status-badge');
+
+                        // Update to Processing
+                        badge.className = 'badge badge-warning badge-pill status-badge';
+                        badge.innerText = 'Processing...';
+
+                        const formData = new FormData();
+                        formData.append('resume', file);
+                        formData.append('csrfmiddlewaretoken', csrfToken);
+
+                        // Append other form data (like tags) if presents
+                        const tagInput = document.getElementById('id_tag'); // Assuming crispy forms renders id_tag
+                        if (tagInput) formData.append('tag', tagInput.value);
+
+                        try {
+                            const response = await fetch("{% url 'homepage' %}", {
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            });
+
+                            if (response.ok) {
+                                badge.className = 'badge badge-success badge-pill status-badge';
+                                badge.innerText = 'Completed';
+                            } else {
+                                const data = await response.json();
+                                badge.className = 'badge badge-danger badge-pill status-badge';
+                                badge.innerText = 'Failed';
+                                li.innerHTML += `<br><small class="text-danger">${data.message || 'Error'}</small>`;
+                            }
+                        } catch (error) {
+                            badge.className = 'badge badge-danger badge-pill status-badge';
+                            badge.innerText = 'Error';
+                            console.error('Upload error:', error);
+                        }
+                    }
+
+                    // Final State
+                    statusMessage.style.display = 'none';
+                    submitBtn.innerHTML = 'All Done';
+                    dataPageBtn.style.display = 'block';
+                });
+            </script>
+        </form>
+            </div> <!-- Close card-body -->
+        </div> <!-- Close card -->
+    </div> <!-- Close col -->
+</div> <!-- Close row -->
+
+{% comment %} 
+Legary resume list code removed. 
+Use resumes_list.html for viewing data. 
+{% endcomment %}
+{% endblock %}

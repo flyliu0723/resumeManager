@@ -4,7 +4,7 @@ class ResumeParserAI extends BaseParser {
   constructor(options = {}) {
     super(options)
     this.apiUrl = options.apiUrl || 'http://localhost:5001'
-    this.timeout = options.timeout || 30000
+    this.timeout = options.timeout || 180000  // 3分钟
   }
 
   async parse(filePath, originalName) {
@@ -39,7 +39,7 @@ class ResumeParserAI extends BaseParser {
         rawText: '',
         structuredData: { error: error.message },
         parsedAt: new Date().toISOString(),
-        parser: 'resume-parser-ai',
+        parser: 'resume-parser',
         error: error.message
       }
     }
@@ -48,6 +48,7 @@ class ResumeParserAI extends BaseParser {
   transformResult(apiResult, fileName) {
     const data = apiResult.data
     const metadata = apiResult.metadata
+    const parserType = data.parser || 'resume-parser'
 
     return {
       candidateName: data.candidateName || '未知',
@@ -61,11 +62,11 @@ class ResumeParserAI extends BaseParser {
         education: data.education,
         experience: data.experience,
         companies: data.companies,
-        parser: 'resume-parser-ai',
+        parser: parserType,
         model: metadata.model
       },
       parsedAt: data.parsedAt || new Date().toISOString(),
-      parser: 'resume-parser-ai',
+      parser: parserType,
       metadata: {
         fileName: metadata.fileName,
         fileSize: metadata.fileSize,

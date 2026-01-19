@@ -9,7 +9,7 @@ class ParserFactory {
       'ai': null,
       'resume-parser-ai': null
     }
-    this.currentParser = 'rule-based'
+    this.currentParser = 'resume-parser-ai'
   }
 
   init(options = {}) {
@@ -19,8 +19,15 @@ class ParserFactory {
       this.parsers['ai'] = new AIParser(options.ai)
     }
 
+    // 配置 ResumeParserAI（统一解析接口）
     if (options.resumeParserAI?.apiUrl) {
       this.parsers['resume-parser-ai'] = new ResumeParserAI(options.resumeParserAI)
+    } else {
+      // 默认使用 localhost:5001
+      this.parsers['resume-parser-ai'] = new ResumeParserAI({
+        apiUrl: 'http://localhost:5001',
+        timeout: 180000  // 3分钟
+      })
     }
   }
 
@@ -33,10 +40,21 @@ class ParserFactory {
   }
 
   getParser() {
-    if (!this.parsers[this.currentParser]) {
-      this.parsers['rule-based'] = new RuleBasedParser()
+    const parser = this.parsers[this.currentParser]
+    if (parser) {
+      return parser
     }
-    return this.parsers[this.currentParser]
+
+    if (this.parsers['rule-based']) {
+      console.warn(`解析器 '${this.currentParser}' 未初始化，回退到 rule-based`)
+      this.currentParser = 'rule-based'
+      return this.parsers['rule-based']
+    }
+
+    console.warn(`所有解析器未初始化，使用默认 rule-based`)
+    this.parsers['rule-based'] = new RuleBasedParser()
+    this.currentParser = 'rule-based'
+    return this.parsers['rule-based']
   }
 
   async parse(filePath, originalName) {
@@ -53,12 +71,9 @@ class ParserFactory {
   }
 
   getAvailableParsers() {
-    const available = ['rule-based']
+    const available = ['rule-based', 'resume-parser-ai']
     if (this.parsers['ai']) {
       available.push('ai')
-    }
-    if (this.parsers['resume-parser-ai']) {
-      available.push('resume-parser-ai')
     }
     return available
   }

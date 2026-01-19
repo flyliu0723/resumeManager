@@ -44,6 +44,7 @@ Thumbs.db
 # Server uploads
 server/uploads/*
 !server/uploads/.gitkeep
+server/parser/resume_parser/models
 
 # Temporary files
 *.tmp

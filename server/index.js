@@ -1,6 +1,6 @@
 const express = require('express')
 const cors = require('cors')
-const { initDatabase, positionStmt, resumeStmt } = require('./database')
+const { initDatabase, positionStmt, resumeStmt, aiConfigStmt } = require('./database')
 const path = require('path')
 const fs = require('fs')
 const busboy = require('busboy')
@@ -97,10 +97,22 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
       console.log('\n========== 解析结果 ==========')
       console.log('候选人姓名:', result.candidateName)
       console.log('内容长度:', result.content?.length || 0, '字符')
-      console.log('内容预览:', result.content?.substring(0, 200) || '无')
+      console.log('解析器:', result.parser)
       console.log('================================\n')
       
-      // 确保所有值都是字符串
+      // 将结构化数据转换为JSON字符串存储
+      const parsedData = JSON.stringify({
+        name: result.candidateName,
+        email: result.structuredData?.email,
+        mobile: result.structuredData?.mobile,
+        skills: result.structuredData?.skills || [],
+        education: result.structuredData?.education,
+        experience: result.structuredData?.experience,
+        companies: result.structuredData?.companies || [],
+        summary: result.structuredData?.ai_summary
+      })
+
+      // 存储到数据库
       const insertResult = resumeStmt.insert(
         String(positionId),
         String(recordFileName),
@@ -109,6 +121,16 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         String(filePath),
         String(result.candidateName || '未知'),
         String(result.content || '')
+      )
+
+      // 更新解析结果
+      resumeStmt.updateParsedData(
+        insertResult.lastInsertRowid,
+        parsedData,
+        result.candidateName || '未知',
+        result.content || '',
+        result.parser,
+        result.structuredData?.model || ''
       )
       
       const newResume = resumeStmt.getById(insertResult.lastInsertRowid)
@@ -126,6 +148,7 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
 
 app.post('/api/resumes/:id/parse', async (req, res) => {
   try {
+    console.log(req.params.id, '>>>>>>req.params.id', req)
     const resume = resumeStmt.getById(req.params.id)
     if (!resume || !resume.file_path) {
       return res.status(404).json({ success: false, message: '简历不存在或无文件' })
@@ -145,10 +168,30 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
     console.log('\n========== 解析结果 ==========')
     console.log('候选人姓名:', result.candidateName)
     console.log('内容长度:', result.content?.length || 0, '字符')
-    console.log('内容预览:', result.content?.substring(0, 200) || '无')
+    console.log('解析器:', result.parser)
     console.log('================================\n')
-    
-    resumeStmt.updateContent(req.params.id, String(result.candidateName || '未知'), String(result.content || ''))
+
+    // 将结构化数据转换为JSON字符串存储
+    const parsedData = JSON.stringify({
+      name: result.candidateName,
+      email: result.structuredData?.email,
+      mobile: result.structuredData?.mobile,
+      skills: result.structuredData?.skills || [],
+      education: result.structuredData?.education,
+      experience: result.structuredData?.experience,
+      companies: result.structuredData?.companies || [],
+      summary: result.structuredData?.ai_summary
+    })
+
+    // 更新解析结果（覆盖旧数据）
+    resumeStmt.updateParsedData(
+      req.params.id,
+      parsedData,
+      result.candidateName || '未知',
+      result.content || '',
+      result.parser,
+      result.structuredData?.model || ''
+    )
     
     const updatedResume = resumeStmt.getById(req.params.id)
     res.json({ success: true, data: updatedResume })
@@ -232,7 +275,7 @@ app.delete('/api/positions/:id', (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 })
-
+// 获取职位下的所有简历
 app.get('/api/positions/:positionId/resumes', (req, res) => {
   try {
     const resumes = resumeStmt.getByPosition(req.params.positionId)
@@ -325,13 +368,163 @@ app.get('/api/resumes/:id/content', (req, res) => {
   }
 })
 
+// ==================== AI 配置 API ====================
+
+app.get('/api/ai-configs', (req, res) => {
+  try {
+    const configs = aiConfigStmt.getAll()
+    res.json({ success: true, data: configs })
+  } catch (error) {
+    console.error('获取AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.get('/api/ai-configs/:id', (req, res) => {
+  try {
+    const config = aiConfigStmt.getById(req.params.id)
+    if (config) {
+      res.json({ success: true, data: config })
+    } else {
+      res.status(404).json({ success: false, message: '配置不存在' })
+    }
+  } catch (error) {
+    console.error('获取AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.get('/api/ai-configs/active/current', (req, res) => {
+  try {
+    const config = aiConfigStmt.getActive()
+    res.json({ success: true, data: config })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.post('/api/ai-configs', (req, res) => {
+  try {
+    const { name, provider, api_key, api_url, model, priority } = req.body
+    
+    if (!name || !provider) {
+      return res.status(400).json({ success: false, message: '名称和提供商不能为空' })
+    }
+
+    const result = aiConfigStmt.insert(name, provider, api_key, api_url, model, priority || 0)
+    const newConfig = aiConfigStmt.getById(result.lastInsertRowid)
+    
+    res.json({ success: true, data: newConfig })
+  } catch (error) {
+    console.error('创建AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.put('/api/ai-configs/:id', (req, res) => {
+  try {
+    const { name, provider, api_key, api_url, model, is_active, priority } = req.body
+    
+    if (!name || !provider) {
+      return res.status(400).json({ success: false, message: '名称和提供商不能为空' })
+    }
+
+    aiConfigStmt.update(req.params.id, name, provider, api_key, api_url, model, is_active, priority)
+    const updatedConfig = aiConfigStmt.getById(req.params.id)
+    
+    res.json({ success: true, data: updatedConfig })
+  } catch (error) {
+    console.error('更新AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.post('/api/ai-configs/:id/set-active', (req, res) => {
+  try {
+    aiConfigStmt.setActive(req.params.id)
+    const config = aiConfigStmt.getById(req.params.id)
+    res.json({ success: true, data: config })
+  } catch (error) {
+    console.error('设置激活配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.post('/api/ai-configs/:id/test', (req, res) => {
+  try {
+    const result = aiConfigStmt.test(req.params.id)
+    res.json(result)
+  } catch (error) {
+    console.error('测试AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.delete('/api/ai-configs/:id', (req, res) => {
+  try {
+    const config = aiConfigStmt.getById(req.params.id)
+    if (!config) {
+      return res.status(404).json({ success: false, message: '配置不存在' })
+    }
+    
+    aiConfigStmt.delete(req.params.id)
+    res.json({ success: true, message: '删除成功' })
+  } catch (error) {
+    console.error('删除AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// ==================== 提供商选项 ====================
+
+app.get('/api/ai-providers', (req, res) => {
+  res.json({
+    success: true,
+    data: [
+      { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] },
+      { value: 'ollama', label: 'Ollama 本地模型', fields: ['api_url', 'model'] }
+    ]
+  })
+})
+
+app.get('/api/ai-models', (req, res) => {
+  const { provider } = req.query
+  let models = []
+  
+  if (provider === 'openai') {
+    models = [
+      { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (推荐, 快速)' },
+      { value: 'gpt-4', label: 'GPT-4 (更智能, 较慢)' },
+      { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' }
+    ]
+  } else if (provider === 'ollama') {
+    models = [
+      { value: 'qwen2.5:0.5b', label: 'Qwen2.5 0.5B (最快, 资源占用少)' },
+      { value: 'qwen2.5:1.5b', label: 'Qwen2.5 1.5B (平衡)' },
+      { value: 'qwen2.5:3b', label: 'Qwen2.5 3B (较慢, 更准确)' },
+      { value: 'llama3.1:8b', label: 'Llama 3.1 8B' },
+      { value: 'mistral:7b', label: 'Mistral 7B' }
+    ]
+  }
+  
+  res.json({ success: true, data: models })
+})
+
 async function startServer() {
   try {
     await initDatabase()
     console.log('数据库初始化完成')
+
+    parserFactory.init({
+      resumeParserAI: {
+        apiUrl: process.env.RESUME_PARSER_URL || 'http://localhost:5001',
+        timeout: 30000
+      }
+    })
+
     console.log('当前解析器:', parserFactory.getCurrentParser())
     console.log('可用解析器:', parserFactory.getAvailableParsers())
-    
+
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`)
       console.log(`Upload directory: ${UPLOAD_DIR}`)

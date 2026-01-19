@@ -1,0 +1,23 @@
+# AI Parser Configuration
+# AI 解析器配置
+
+# OpenAI API 配置（可选）
+openai:
+  api_key: ""  # 填入你的 OpenAI API Key
+  api_url: "https://api.openai.com/v1"
+  model: "gpt-3.5-turbo"  # 或 gpt-4
+
+# Ollama 本地模型配置（默认）
+ollama:
+  url: "http://localhost:11434"
+  model: "qwen2.5:1.5b"
+
+# 解析器选择
+# - "openai": 使用 OpenAI API（快速稳定，需付费）
+# - "ollama": 使用本地 Ollama（免费但较慢）
+# - "auto": 优先使用 OpenAI，失败则回退到 Ollama
+parser: "auto"
+
+# 备用解析器（当 AI 不可用时）
+fallback:
+  enabled: true
