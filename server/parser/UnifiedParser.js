@@ -5,6 +5,7 @@ class UnifiedParser {
   constructor(options = {}) {
     this.aiService = new AIService(options)
     this.useFallback = options.useFallback !== false
+    this.activeConfig = null
   }
 
   async parse(filePath, originalName) {
@@ -15,10 +16,10 @@ class UnifiedParser {
     console.log(`文件路径: ${filePath}`)
 
     try {
-      const text = extractTextFromFile(filePath)
-      console.log(`提取文本长度: ${text.length} 字符`)
+      const text = await extractTextFromFile(filePath)
+      console.log(`提取文本长度: ${text?.length || 0} 字符`)
 
-      if (!text || text.trim().length < 10) {
+      if (!text || (text.trim && text.trim().length < 10)) {
         throw new Error('无法提取足够的文本内容')
       }
 
@@ -69,8 +70,8 @@ class UnifiedParser {
   async parseWithAI(text) {
     const activeConfig = this.getActiveConfig()
 
-    if (!activeConfig) {
-      console.log('未找到活跃的AI配置，使用 Fallback')
+    if (!activeConfig || !activeConfig.api_key) {
+      console.log('未找到有效的AI配置，使用 Fallback')
       return this.fallbackParse(text)
     }
 
@@ -126,15 +127,15 @@ class UnifiedParser {
     return urls[provider] || ''
   }
 
-  parseWithFallback(filePath, startTime) {
-    const text = extractTextFromFile(filePath)
+  async parseWithFallback(filePath, startTime) {
+    const text = await extractTextFromFile(filePath)
     const result = this.fallbackParse(text)
 
     const duration = (Date.now() - startTime) / 1000
 
     return {
       candidateName: result.name || '未知',
-      content: text.slice(0, 5000),
+      content: text?.slice(0, 5000) || '',
       structuredData: {
         email: result.email,
         mobile: result.mobile_number,
@@ -151,6 +152,18 @@ class UnifiedParser {
   }
 
   fallbackParse(text) {
+    if (!text) {
+      return {
+        name: '未知',
+        email: null,
+        mobile_number: null,
+        skills: [],
+        education: null,
+        experience: null,
+        company_names: []
+      }
+    }
+
     const info = {
       name: this.extractName(text),
       email: null,
@@ -209,20 +222,38 @@ class UnifiedParser {
 
   extractSkills(text) {
     const skills = []
-    const commonSkills = [
-      'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'C#', 'Go', 'Rust',
-      'React', 'Vue', 'Angular', 'Node.js',
-      'Django', 'Flask', 'Spring Boot',
-      'MySQL', 'PostgreSQL', 'MongoDB', 'Redis',
-      'Docker', 'Kubernetes', 'AWS',
-      'Machine Learning', 'Deep Learning',
-      'Git', 'Linux'
+    const skillPatterns = [
+      { name: 'Python', pattern: /Python/i },
+      { name: 'Java', pattern: /Java(?!Script)/i },
+      { name: 'JavaScript', pattern: /JavaScript/i },
+      { name: 'TypeScript', pattern: /TypeScript/i },
+      { name: 'C++', pattern: /C\+\+/i },
+      { name: 'C#', pattern: /C#/i },
+      { name: 'Go', pattern: /\bGo\b/i },
+      { name: 'Rust', pattern: /Rust/i },
+      { name: 'React', pattern: /React/i },
+      { name: 'Vue', pattern: /Vue(?!e)/i },
+      { name: 'Angular', pattern: /Angular/i },
+      { name: 'Node.js', pattern: /Node\.js/i },
+      { name: 'Django', pattern: /Django/i },
+      { name: 'Flask', pattern: /Flask/i },
+      { name: 'Spring Boot', pattern: /Spring Boot/i },
+      { name: 'MySQL', pattern: /MySQL/i },
+      { name: 'PostgreSQL', pattern: /PostgreSQL/i },
+      { name: 'MongoDB', pattern: /MongoDB/i },
+      { name: 'Redis', pattern: /Redis/i },
+      { name: 'Docker', pattern: /Docker/i },
+      { name: 'Kubernetes', pattern: /Kubernetes/i },
+      { name: 'AWS', pattern: /AWS/i },
+      { name: 'Machine Learning', pattern: /Machine Learning/i },
+      { name: 'Deep Learning', pattern: /Deep Learning/i },
+      { name: 'Git', pattern: /Git/i },
+      { name: 'Linux', pattern: /Linux/i }
     ]
 
-    for (const skill of commonSkills) {
-      const regex = new RegExp(`\\b${skill}\\b`, 'i')
-      if (regex.test(text) && !skills.includes(skill)) {
-        skills.push(skill)
+    for (const { name, pattern } of skillPatterns) {
+      if (pattern.test(text) && !skills.includes(name)) {
+        skills.push(name)
       }
     }
 
