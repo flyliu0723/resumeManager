@@ -45,54 +45,83 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
     const ext = path.extname(originalName)
     const baseName = path.basename(originalName, ext)
 
-    // 使用时间戳和原始文件名
     const fileName = `${timestamp}_${baseName}${ext}`
     filePath = path.join(UPLOAD_DIR, fileName)
 
     console.log('保存路径:', filePath)
-    
+
     tempFilePath = filePath + '.tmp'
     const writeStream = fs.createWriteStream(tempFilePath)
-    
+
     file.on('data', (data) => {
       writeStream.write(data)
       size += data.length
     })
-    
+
     file.on('end', () => {
       writeStream.end()
-      console.log('文件接收完成，大小:', size)
     })
-    
+
     file.on('error', (err) => {
       console.error('文件接收错误:', err.message)
     })
   })
-  
+
   bb.on('close', async () => {
     try {
       if (!recordFileName) {
         return res.status(400).json({ success: false, message: '没有上传文件' })
       }
-      
-      // 重命名临时文件到正式文件
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        if (filePath !== tempFilePath) {
-          fs.renameSync(tempFilePath, filePath)
-        }
+
+      if (!tempFilePath || !fs.existsSync(tempFilePath)) {
+        throw new Error('文件未正确接收')
       }
-      
+
+      await new Promise((resolve, reject) => {
+        const writeStream = fs.createReadStream(tempFilePath)
+        const outStream = fs.createWriteStream(filePath)
+
+        writeStream.pipe(outStream)
+
+        outStream.on('finish', resolve)
+        outStream.on('error', reject)
+      })
+
+      fs.unlinkSync(tempFilePath)
+
       console.log('\n========== 上传简历 ==========')
       console.log('文件名:', recordFileName)
       console.log('文件大小:', size, 'bytes')
       console.log('文件类型:', type)
       console.log('文件路径:', filePath)
-      
-      // 检查文件是否存在
-      if (!fs.existsSync(filePath)) {
-        throw new Error('文件未正确保存')
+
+      let retries = 3
+      let fileExists = false
+      let fileContent = null
+
+      while (retries > 0 && !fileExists) {
+        await new Promise(r => setTimeout(r, 100))
+
+        try {
+          if (fs.existsSync(filePath)) {
+            const stats = fs.statSync(filePath)
+            if (stats.size > 0) {
+              fileContent = fs.readFileSync(filePath)
+              if (fileContent.length > 0) {
+                fileExists = true
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('检查文件失败，重试中...')
+        }
+        retries--
       }
-      
+
+      if (!fileExists) {
+        throw new Error('文件写入失败或为空')
+      }
+
       const result = await parserFactory.parse(filePath, recordFileName)
       
       console.log('\n========== 解析结果 ==========')
@@ -171,7 +200,7 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
     console.log('内容长度:', result.content?.length || 0, '字符')
     console.log('解析器:', result.parser)
     console.log('================================\n')
-
+    
     // 将结构化数据转换为JSON字符串存储
     const parsedData = JSON.stringify({
       name: result.candidateName,
