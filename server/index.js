@@ -484,8 +484,7 @@ app.get('/api/ai-providers', (req, res) => {
       { value: 'zhipu', label: '智谱GLM', fields: ['api_key', 'model'], apiUrl: 'https://open.bigmodel.cn/api/paas/v4' },
       { value: 'minimax', label: 'MiniMax', fields: ['api_key', 'model'], apiUrl: 'https://api.minimax.chat/v1' },
       { value: 'deepseek', label: 'DeepSeek', fields: ['api_key', 'model'], apiUrl: 'https://api.deepseek.com' },
-      { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] },
-      { value: 'ollama', label: 'Ollama 本地模型', fields: ['api_url', 'model'] }
+      { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] }
     ]
   })
 })
@@ -517,15 +516,10 @@ app.get('/api/ai-models', (req, res) => {
       { value: 'gpt-4', label: 'GPT-4 (更智能, 较慢)' },
       { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' }
     ]
-  } else if (provider === 'ollama') {
-    models = [
-      { value: 'qwen2.5:0.5b', label: 'Qwen2.5 0.5B (最快, 资源占用少)' },
-      { value: 'qwen2.5:1.5b', label: 'Qwen2.5 1.5B (平衡)' },
-      { value: 'qwen2.5:3b', label: 'Qwen2.5 3B (较慢, 更准确)' },
-      { value: 'llama3.1:8b', label: 'Llama 3.1 8B' },
-      { value: 'mistral:7b', label: 'Mistral 7B' }
-    ]
   }
+
+  res.json({ success: true, data: models })
+})
 
   res.json({ success: true, data: models })
 })
@@ -551,7 +545,6 @@ async function startServer() {
       console.log('  - MiniMax (minimax)')
       console.log('  - DeepSeek (deepseek)')
       console.log('  - OpenAI (openai)')
-      console.log('  - Ollama (ollama, 本地)')
     })
   } catch (error) {
     console.error('启动服务器失败:', error)

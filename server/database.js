@@ -230,44 +230,48 @@ const aiConfigStmt = {
   },
   
   delete: (id) => run('DELETE FROM ai_configs WHERE id = ?', [Number(id)]),
-  
+
   test: (id) => {
     const config = get('SELECT * FROM ai_configs WHERE id = ?', [Number(id)])
     if (!config) return { success: false, error: '配置不存在' }
-    
-    if (config.provider === 'openai' && config.api_key) {
-      // 测试 OpenAI API
-      try {
-        const response = require('axios').default.post(
-          `${config.api_url}/chat/completions`,
-          {
-            model: config.model || 'gpt-3.5-turbo',
-            messages: [{ role: 'user', content: 'Hi' }],
-            max_tokens: 5
-          },
-          {
-            headers: { 'Authorization': `Bearer ${config.api_key}` },
-            timeout: 10000
-          }
-        )
-        return { success: true, message: '连接成功' }
-      } catch (e) {
-        return { success: false, error: e.message }
-      }
-    } else if (config.provider === 'ollama') {
-      // 测试 Ollama
-      try {
-        const response = require('axios').default.post(
-          `${config.api_url}/api/version`,
-          {},
-          { timeout: 5000 }
-        )
-        return { success: true, message: '连接成功' }
-      } catch (e) {
-        return { success: false, error: '无法连接到 Ollama 服务' }
-      }
+
+    if (!config.api_key) {
+      return { success: false, error: '缺少 API Key' }
     }
-    return { success: false, error: '无法测试此配置' }
+
+    const providers = ['zhipu', 'minimax', 'deepseek', 'openai']
+    if (!providers.includes(config.provider)) {
+      return { success: false, error: '不支持的提供商' }
+    }
+
+    try {
+      const axios = require('axios')
+      const apiUrl = config.api_url || {
+        zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+        minimax: 'https://api.minimax.chat/v1',
+        deepseek: 'https://api.deepseek.com',
+        openai: 'https://api.openai.com/v1'
+      }[config.provider]
+
+      const response = axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: config.model || (config.provider === 'zhipu' ? 'glm-4' : 'gpt-3.5-turbo'),
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.api_key}`
+          },
+          timeout: 10000
+        }
+      )
+      return { success: true, message: '连接成功' }
+    } catch (e) {
+      return { success: false, error: e.message }
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 # Resume Parser System
 
-简历解析系统 - 集成 OmkarPathak/ResumeParser 本地AI解析
+简历解析系统 - 基于云端AI的简历解析
 
 ## 系统架构
 
@@ -17,62 +17,44 @@
                            ▼
 ┌─────────────────────────────────────────────────────┐
 │  后端 API (Node.js)      http://localhost:3000      │
+│  - 简历解析 (集成AI API调用)                         │
+│  - PDF/DOCX文本提取                                 │
+│  - SQLite 数据库                                    │
 └─────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────┐
-│  简历解析服务 (Python)    http://localhost:5001      │
-│  - ResumeParser AI (Qwen2.5-1.5B 本地模型)          │
-│  - Fallback 规则解析器                               │
+│  云端AI服务                                         │
+│  - 智谱GLM (glm-4)                                  │
+│  - MiniMax (abab6.5s-chat)                          │
+│  - DeepSeek (deepseek-chat)                         │
+│  - OpenAI (gpt-3.5-turbo)                           │
 └─────────────────────────────────────────────────────┘
 ```
 
 ## 快速启动
 
-### 方式一：手动启动（推荐）
+### 1. 安装依赖
 
-**1. 启动简历解析服务（必需）**
 ```bash
-cd server/parser
-python ResumeParserAPI.py
+npm install
 ```
-服务运行在 http://localhost:5001
 
-**2. 启动后端 API**
+### 2. 启动后端服务
+
 ```bash
-cd server
-node index.js
+npm start
 ```
+
 服务运行在 http://localhost:3000
 
-**3. 启动前端**
+### 3. 启动前端开发服务器
+
 ```bash
 npm run dev
 ```
+
 服务运行在 http://localhost:5173
-
----
-
-### 方式二：一键启动（Windows）
-
-```bash
-start.bat
-```
-
----
-
-### 方式三：使用 npm scripts
-
-```bash
-# 启动所有服务
-npm start
-
-# 仅启动后端
-npm run start:server
-
-# 启动前端开发服务器
-npm run dev
-```
 
 ## API 接口
 
@@ -80,88 +62,83 @@ npm run dev
 - `POST /api/positions/:positionId/resumes` - 上传并解析简历
 - `POST /api/resumes/:id/parse` - 重新解析简历
 
-### 健康检查
-- `GET /api/health` - 后端健康检查
-- `GET http://localhost:5001/api/health` - 简历解析服务健康检查
+### AI配置
+- `GET /api/ai-configs` - 获取所有AI配置
+- `POST /api/ai-configs` - 创建AI配置
+- `PUT /api/ai-configs/:id` - 更新AI配置
+- `DELETE /api/ai-configs/:id` - 删除AI配置
+- `POST /api/ai-configs/:id/set-active` - 设置活跃配置
+- `POST /api/ai-configs/:id/test` - 测试配置连接
+
+### 提供商列表
+- `GET /api/ai-providers` - 获取支持的AI提供商
+- `GET /api/ai-models?provider=xxx` - 获取指定提供商的模型列表
+
+## 支持的AI提供商
+
+| 提供商 | 默认模型 | 特点 | 价格参考 |
+|--------|----------|------|----------|
+| 智谱GLM | glm-4 | 国产，推理能力强 | ¥0.01/1k tokens |
+| MiniMax | abab6.5s-chat | 快速，便宜 | ¥0.002/1k tokens |
+| DeepSeek | deepseek-chat | 性价比高 | ¥0.001/1k tokens |
+| OpenAI | gpt-3.5-turbo | 稳定可靠 | $0.0005/1k tokens |
 
 ## 配置说明
 
-### 环境变量
+### 1. 访问配置页面
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `RESUME_PARSER_URL` | 简历解析服务地址 | `http://localhost:5001` |
+打开 http://localhost:5173/config
 
-### 解析器选择
+### 2. 添加AI配置
 
-系统支持三种解析器，按准确性排序：
-1. **resume-parser-ai** - 本地AI解析（需下载模型，约2GB）
-2. **ai** - OpenAI API 解析（需配置API Key）
-3. **rule-based** - 规则解析（内置，无需配置）
+选择提供商，填写API Key，选择模型，设置优先级。
 
-修改 `server/parser/factory.js` 中的 `currentParser` 来切换解析器。
+### 3. 测试连接
 
-## 安装依赖
-
-### Python 依赖
-```bash
-cd server/parser
-pip install -r requirements.txt
-```
-
-### 下载AI模型（可选，约2GB）
-```bash
-cd server/parser
-python download_models.py
-```
-下载后解析准确性会显著提升。
-
-### Node.js 依赖
-```bash
-npm install
-```
+保存配置后可以测试连接是否正常。
 
 ## 目录结构
 
 ```
 resume1/
-├── src/                    # Vue 前端源码
+├── src/
+│   ├── components/
+│   │   └── AIConfig.vue     # AI配置组件
+│   ├── views/
+│   │   └── AIConfigView.vue # AI配置页面
+│   └── ...
 ├── server/
-│   ├── index.js           # 后端入口
-│   ├── database.js        # SQLite 数据库
-│   ├── parser/            # 简历解析模块
-│   │   ├── factory.js     # 解析器工厂
-│   │   ├── ResumeParserAPI.py  # Python API 服务
-│   │   └── resume_parser/ # ResumeParser 项目
-│   │       └── models/    # AI 模型文件
-│   └── uploads/           # 上传文件存储
-├── package.json           # 前端配置
+│   ├── index.js             # 后端入口
+│   ├── database.js          # SQLite 数据库
+│   ├── aiService.js         # AI API 调用服务
+│   ├── pdfService.js        # PDF/DOCX 解析
+│   └── parser/
+│       └── UnifiedParser.js # 统一解析器
+├── package.json
 └── README.md
 ```
-
-## 常见问题
-
-### Q: 解析准确性低？
-A: 运行 `python download_models.py` 下载AI模型，然后重启解析服务。
-
-### Q: Python 服务启动失败？
-A: 检查是否安装了所有Python依赖：
-```bash
-pip install flask flask-cors PyPDF2 python-docx
-```
-
-### Q: 端口被占用？
-A: 修改对应服务的端口：
-- Python: 修改 `ResumeParserAPI.py` 中的 `port=5001`
-- Node.js: 修改 `server/index.js` 中的 `PORT=3000`
 
 ## 技术栈
 
 - **前端**: Vue 3, Vite, Element Plus, Pinia, Vue Router
 - **后端**: Node.js, Express, SQLite, Busboy
-- **简历解析**: Python, Flask, ResumeParser (Qwen2.5-1.5B)
-- **PDF处理**: PyPDF2, pdf.js
+- **PDF处理**: pdf-parse, mammoth
+- **AI服务**: 智谱GLM, MiniMax, DeepSeek, OpenAI
 
-## 参考项目
+## 常见问题
 
-- [OmkarPathak/ResumeParser](https://github.com/OmkarPathak/ResumeParser)
+### Q: 解析速度慢？
+A: 云端解析通常需要5-15秒。可尝试MiniMax或DeepSeek，速度更快。
+
+### Q: 解析结果不准确？
+A: 1. 检查API Key是否有效；2. 尝试不同模型；3. 使用规则解析作为备选。
+
+### Q: 端口被占用？
+A: 修改 `server/index.js` 中的 `PORT` 变量。
+
+## 参考文档
+
+- [智谱AI开放平台](https://open.bigmodel.cn/doc/)
+- [MiniMax API文档](https://api.minimax.chat/docs)
+- [DeepSeek API文档](https://platform.deepseek.com/api-docs)
+- [OpenAI API文档](https://platform.openai.com/docs)

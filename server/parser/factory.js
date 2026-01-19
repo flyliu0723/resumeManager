@@ -1,14 +1,10 @@
 const RuleBasedParser = require('./RuleBasedParser')
-const AIParser = require('./AIParser')
-const ResumeParserAI = require('./ResumeParserAI')
 const UnifiedParser = require('./UnifiedParser')
 
 class ParserFactory {
   constructor() {
     this.parsers = {
       'rule-based': null,
-      'ai': null,
-      'resume-parser-ai': null,
       'unified': null
     }
     this.currentParser = 'unified'
@@ -16,15 +12,6 @@ class ParserFactory {
 
   init(options = {}) {
     this.parsers['rule-based'] = new RuleBasedParser(options.ruleBased)
-
-    if (options.ai?.apiKey) {
-      this.parsers['ai'] = new AIParser(options.ai)
-    }
-
-    if (options.resumeParserAI?.apiUrl) {
-      this.parsers['resume-parser-ai'] = new ResumeParserAI(options.resumeParserAI)
-    }
-
     this.parsers['unified'] = new UnifiedParser(options.unified)
   }
 
@@ -68,11 +55,7 @@ class ParserFactory {
   }
 
   getAvailableParsers() {
-    const available = ['unified', 'rule-based', 'resume-parser-ai']
-    if (this.parsers['ai']) {
-      available.push('ai')
-    }
-    return available
+    return ['unified', 'rule-based']
   }
 
   getCurrentParser() {
@@ -86,6 +69,4 @@ factory.init()
 module.exports = factory
 module.exports.ParserFactory = ParserFactory
 module.exports.RuleBasedParser = RuleBasedParser
-module.exports.AIParser = AIParser
-module.exports.ResumeParserAI = ResumeParserAI
 module.exports.UnifiedParser = UnifiedParser

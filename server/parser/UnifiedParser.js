@@ -121,8 +121,7 @@ class UnifiedParser {
       zhipu: 'https://open.bigmodel.cn/api/paas/v4',
       minimax: 'https://api.minimax.chat/v1',
       deepseek: 'https://api.deepseek.com',
-      openai: 'https://api.openai.com/v1',
-      ollama: 'http://localhost:11434'
+      openai: 'https://api.openai.com/v1'
     }
     return urls[provider] || ''
   }

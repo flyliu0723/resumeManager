@@ -168,8 +168,7 @@ const getProviderTagType = (provider) => {
     zhipu: 'success',
     minimax: 'warning',
     deepseek: '',
-    openai: 'info',
-    ollama: 'warning'
+    openai: 'info'
   }
   return types[provider] || ''
 }
@@ -189,8 +188,7 @@ const getApiUrlPlaceholder = () => {
     zhipu: 'https://open.bigmodel.cn/api/paas/v4',
     minimax: 'https://api.minimax.chat/v1',
     deepseek: 'https://api.deepseek.com',
-    openai: 'https://api.openai.com/v1',
-    ollama: 'http://localhost:11434'
+    openai: 'https://api.openai.com/v1'
   }
   return placeholders[formData.value.provider] || ''
 }
@@ -202,8 +200,7 @@ const handleProviderChange = () => {
     zhipu: 'https://open.bigmodel.cn/api/paas/v4',
     minimax: 'https://api.minimax.chat/v1',
     deepseek: 'https://api.deepseek.com',
-    openai: 'https://api.openai.com/v1',
-    ollama: 'http://localhost:11434'
+    openai: 'https://api.openai.com/v1'
   }
 
   formData.value.api_url = defaultUrls[formData.value.provider] || ''
