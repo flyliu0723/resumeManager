@@ -254,7 +254,7 @@ const showAddDialog = () => {
     provider: 'zhipu',
     api_key: '',
     api_url: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4',
+    model: 'glm-4.7',
     priority: configs.value.length
   }
   fetchModels('zhipu')

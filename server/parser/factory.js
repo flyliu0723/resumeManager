@@ -41,17 +41,17 @@ class ParserFactory {
     return this.parsers['unified']
   }
 
-  async parse(filePath, originalName) {
+  async parse(filePath, originalName, positionId = null) {
     const parser = this.getParser()
-    return await parser.parse(filePath, originalName)
+    return await parser.parse(filePath, originalName, positionId)
   }
 
-  async parseWith(filePath, originalName, parserName) {
+  async parseWith(filePath, originalName, parserName, positionId = null) {
     const parser = this.parsers[parserName]
     if (!parser) {
       throw new Error(`Parser not found: ${parserName}`)
     }
-    return await parser.parse(filePath, originalName)
+    return await parser.parse(filePath, originalName, positionId)
   }
 
   getAvailableParsers() {

@@ -9,12 +9,15 @@ class UnifiedParser {
     this.activeConfig = null
   }
 
-  async parse(filePath, originalName) {
+  async parse(filePath, originalName, positionId = null) {
     const startTime = Date.now()
 
     console.log(`\n========== 开始解析简历 ==========`)
     console.log(`文件名: ${originalName}`)
     console.log(`文件路径: ${filePath}`)
+    if (positionId) {
+      console.log(`职位ID: ${positionId}`)
+    }
 
     try {
       const text = await extractTextFromFile(filePath)
@@ -25,9 +28,15 @@ class UnifiedParser {
       }
 
       const result = await this.parseWithAI(text)
-      console.log("🚀 ~ UnifiedParser ~ parse ~ result:", result)
 
       const duration = (Date.now() - startTime) / 1000
+
+      let evaluation = null
+      if (positionId) {
+        console.log('开始评估候选人匹配度...')
+        evaluation = await this.evaluateWithPosition(result, positionId)
+        console.log(`评估完成: ${evaluation?.matchLevel || 'N/A'}`)
+      }
 
       const finalResult = {
         candidateName: result.name || '未知',
@@ -41,6 +50,7 @@ class UnifiedParser {
           companies: result.companies || [],
           ai_summary: result.experience
         },
+        evaluation: evaluation,
         parser: 'unified-nodejs',
         model: result._model || 'unknown',
         parsingTime: `${duration.toFixed(2)}s`
@@ -51,6 +61,10 @@ class UnifiedParser {
       console.log(`邮箱: ${finalResult.structuredData.email}`)
       console.log(`手机: ${finalResult.structuredData.mobile}`)
       console.log(`技能: ${finalResult.structuredData.skills}`)
+      if (evaluation) {
+        console.log(`匹配度: ${evaluation.matchLevel}`)
+        console.log(`评估原因: ${evaluation.reason?.slice(0, 100)}...`)
+      }
       console.log(`解析器: unified-nodejs, 模型: ${finalResult.model}`)
       console.log(`耗时: ${finalResult.parsingTime}`)
       console.log('='.repeat(50))
@@ -62,11 +76,63 @@ class UnifiedParser {
 
       if (this.useFallback) {
         console.log('使用 Fallback 规则解析...')
-        return this.parseWithFallback(filePath, startTime, originalName)
+        const fallbackResult = await this.parseWithFallback(filePath, startTime, originalName, positionId)
+        return fallbackResult
       }
 
       throw error
     }
+  }
+
+  async evaluateWithPosition(parsedResult, positionId) {
+    try {
+      const db = require('../database')
+      const position = db.positionStmt.getById(positionId)
+
+      if (!position || !position.description) {
+        console.log('职位无JD，跳过评估')
+        return null
+      }
+
+      const resumeJson = {
+        name: parsedResult.name,
+        skills: parsedResult.skills || [],
+        education: parsedResult.education,
+        experience: parsedResult.experience,
+        companies: parsedResult.companies || []
+      }
+
+      const jdText = position.description
+
+      const evaluationText = await this.aiService.evaluateCandidate(resumeJson, jdText)
+
+      const matchLevel = this.extractMatchLevel(evaluationText)
+
+      return {
+        matchLevel: matchLevel,
+        reason: evaluationText,
+        positionId: positionId,
+        positionName: position.name,
+        evaluatedAt: new Date().toISOString()
+      }
+    } catch (error) {
+      console.error('评估失败:', error.message)
+      return null
+    }
+  }
+
+  extractMatchLevel(text) {
+    const match = text.match(/匹配程度[：:]\s*([高中高低])/)
+    if (match) return match[1]
+
+    const directMatch = text.match(/(高|中|低)匹配/)
+    if (directMatch) return directMatch[1]
+
+    if (text.includes('高匹配') || text.includes('高度匹配')) return '高'
+    if (text.includes('中匹配') || text.includes('一般匹配')) return '中'
+    if (text.includes('低匹配') || text.includes('不匹配')) return '低'
+
+    return '中'
   }
 
   async parseWithAI(text) {
@@ -77,22 +143,15 @@ class UnifiedParser {
       return this.fallbackParse(text)
     }
 
-    const { provider, api_key, api_url, model } = activeConfig
+    this.aiService.setActiveConfig(activeConfig)
 
+    const { provider, model } = activeConfig
     console.log(`使用AI解析: ${provider} - ${model}`)
 
     try {
-      const result = await this.aiService.parseWithProvider(
-        provider,
-        api_key,
-        api_url || this.getDefaultApiUrl(provider),
-        model,
-        text
-      )
-
+      const result = await this.aiService.parseResume(text)
       result._model = model
       return result
-
     } catch (error) {
       console.error(`AI解析失败: ${error.message}`)
       throw error
@@ -128,15 +187,19 @@ class UnifiedParser {
     return urls[provider] || ''
   }
 
-  async parseWithFallback(filePath, startTime, originalName = '') {
+  async parseWithFallback(filePath, startTime, originalName = '', positionId = null) {
     const text = await extractTextFromFile(filePath)
-    const result = this.fallbackParse(text)
+    const result = this.fallbackParse(text, originalName)
 
     const duration = (Date.now() - startTime) / 1000
 
+    let evaluation = null
+    if (positionId) {
+      evaluation = await this.evaluateWithPosition(result, positionId)
+    }
+
     const nameFromFile = this.extractNameFromFileName(originalName)
     const nameFromContent = result.name
-
     let candidateName = nameFromContent !== '未知' ? nameFromContent : (nameFromFile || '未知')
 
     return {
@@ -151,6 +214,7 @@ class UnifiedParser {
         companies: result.company_names,
         ai_summary: result.experience
       },
+      evaluation: evaluation,
       parser: 'fallback',
       model: 'rule-based',
       parsingTime: `${duration.toFixed(2)}s`
@@ -206,7 +270,7 @@ class UnifiedParser {
     }
 
     const info = {
-      name: this.extractName(text),
+      name: '未知',
       email: null,
       mobile_number: null,
       skills: [],
@@ -233,32 +297,6 @@ class UnifiedParser {
     info.company_names = this.extractCompanies(text)
 
     return info
-  }
-
-  extractName(text) {
-    const patterns = [
-      /姓\s*名[：:\s]*([^\s\u4e00-\u9fa5]{1,10})/,
-      /Name[：:]\s*([^\s]+)/,
-      /^([\u4e00-\u9fa5]{2,4})$/
-    ]
-
-    const lines = text.split('\n').slice(0, 15)
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.length > 50) continue
-
-      for (const pattern of patterns) {
-        const match = trimmed.match(pattern)
-        if (match) {
-          const name = match[1].trim()
-          if (name.length >= 1 && name.length <= 10 && !/^\d+$/.test(name)) {
-            return name
-          }
-        }
-      }
-    }
-
-    return '未知'
   }
 
   extractSkills(text) {

@@ -1,40 +1,57 @@
 const axios = require('axios')
-
-const PROMPT_TEMPLATE = `你是一个简历解析专家。请从以下简历文本中提取信息，返回JSON格式：
-
-简历文本：
-{text}
-
-请提取以下信息（如果找不到某项信息，设置为null）：
-{{
-  "name": "姓名",
-  "email": "邮箱地址",
-  "mobile": "电话号码",
-  "skills": ["技能列表"],
-  "education": "教育背景",
-  "experience": "工作经历",
-  "companies": ["公司名称列表"]
-}}
-
-只返回JSON，不要其他内容。`
+const promptService = require('../promptService')
 
 class AIService {
   constructor(config) {
     this.config = config
+    this.activeConfig = null
   }
 
-  async parseWithProvider(provider, apiKey, apiUrl, model, text) {
-    const prompt = PROMPT_TEMPLATE.replace('{text}', text.slice(0, 3000))
+  setActiveConfig(config) {
+    this.activeConfig = config
+  }
+
+  async parseResume(text) {
+    const prompt = promptService.getParseResumePrompt(text.slice(0, 3000))
+
+    if (!this.activeConfig || !this.activeConfig.api_key) {
+      throw new Error('未配置AI服务')
+    }
+
+    const { provider, api_key, api_url, model } = this.activeConfig
 
     switch (provider) {
       case 'zhipu':
-        return this.parseWithZhipu(apiKey, apiUrl, model, prompt)
+        return this.parseWithZhipu(api_key, api_url, model, prompt)
       case 'minimax':
-        return this.parseWithMinimax(apiKey, apiUrl, model, prompt)
+        return this.parseWithMinimax(api_key, api_url, model, prompt)
       case 'deepseek':
-        return this.parseWithDeepseek(apiKey, apiUrl, model, prompt)
+        return this.parseWithDeepseek(api_key, api_url, model, prompt)
       case 'openai':
-        return this.parseWithOpenAI(apiKey, apiUrl, model, prompt)
+        return this.parseWithOpenAI(api_key, api_url, model, prompt)
+      default:
+        throw new Error(`不支持的提供商: ${provider}`)
+    }
+  }
+
+  async evaluateCandidate(resumeJson, jdText) {
+    const prompt = promptService.getEvaluatePrompt(resumeJson, jdText)
+
+    if (!this.activeConfig || !this.activeConfig.api_key) {
+      throw new Error('未配置AI服务')
+    }
+
+    const { provider, api_key, api_url, model } = this.activeConfig
+
+    switch (provider) {
+      case 'zhipu':
+        return this.evaluateWithZhipu(api_key, api_url, model, prompt)
+      case 'minimax':
+        return this.evaluateWithMinimax(api_key, api_url, model, prompt)
+      case 'deepseek':
+        return this.evaluateWithDeepseek(api_key, api_url, model, prompt)
+      case 'openai':
+        return this.evaluateWithOpenAI(api_key, api_url, model, prompt)
       default:
         throw new Error(`不支持的提供商: ${provider}`)
     }
@@ -46,10 +63,7 @@ class AIService {
         `${apiUrl}/chat/completions`,
         {
           model: model || 'glm-4',
-          messages: [
-            { role: 'system', content: '你是一个简历解析专家，擅长提取简历中的关键信息。只返回JSON格式。' },
-            { role: 'user', content: prompt }
-          ],
+          messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 2000
         },
@@ -61,10 +75,34 @@ class AIService {
           timeout: 60000
         }
       )
-
       return this.parseResponse(response.data)
     } catch (error) {
       console.error('智谱GLM解析失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async evaluateWithZhipu(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'glm-4',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return response.data.choices[0].message.content.trim()
+    } catch (error) {
+      console.error('智谱GLM评估失败:', error.response?.data || error.message)
       throw error
     }
   }
@@ -75,10 +113,7 @@ class AIService {
         `${apiUrl}/text/chatcompletion_v2`,
         {
           model: model || 'abab6.5s-chat',
-          messages: [
-            { role: 'system', content: '你是一个简历解析专家，擅长提取简历中的关键信息。只返回JSON格式。' },
-            { role: 'user', content: prompt }
-          ],
+          messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 2000
         },
@@ -90,10 +125,34 @@ class AIService {
           timeout: 60000
         }
       )
-
       return this.parseMinimaxResponse(response.data)
     } catch (error) {
       console.error('MiniMax解析失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async evaluateWithMinimax(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/text/chatcompletion_v2`,
+        {
+          model: model || 'abab6.5s-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return response.data.choices[0].message.content.trim()
+    } catch (error) {
+      console.error('MiniMax评估失败:', error.response?.data || error.message)
       throw error
     }
   }
@@ -104,10 +163,7 @@ class AIService {
         `${apiUrl}/chat/completions`,
         {
           model: model || 'deepseek-chat',
-          messages: [
-            { role: 'system', content: '你是一个简历解析专家，擅长提取简历中的关键信息。只返回JSON格式。' },
-            { role: 'user', content: prompt }
-          ],
+          messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 2000
         },
@@ -119,10 +175,34 @@ class AIService {
           timeout: 60000
         }
       )
-
       return this.parseResponse(response.data)
     } catch (error) {
       console.error('DeepSeek解析失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async evaluateWithDeepseek(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'deepseek-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return response.data.choices[0].message.content.trim()
+    } catch (error) {
+      console.error('DeepSeek评估失败:', error.response?.data || error.message)
       throw error
     }
   }
@@ -133,10 +213,7 @@ class AIService {
         `${apiUrl}/chat/completions`,
         {
           model: model || 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: '你是一个简历解析专家，擅长提取简历中的关键信息。只返回JSON格式。' },
-            { role: 'user', content: prompt }
-          ],
+          messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 2000
         },
@@ -148,10 +225,34 @@ class AIService {
           timeout: 60000
         }
       )
-
       return this.parseResponse(response.data)
     } catch (error) {
       console.error('OpenAI解析失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async evaluateWithOpenAI(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return response.data.choices[0].message.content.trim()
+    } catch (error) {
+      console.error('OpenAI评估失败:', error.response?.data || error.message)
       throw error
     }
   }

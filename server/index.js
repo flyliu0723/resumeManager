@@ -122,7 +122,7 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         throw new Error('文件写入失败或为空')
       }
 
-      const result = await parserFactory.parse(filePath, recordFileName)
+      const result = await parserFactory.parse(filePath, recordFileName, positionId)
       
       console.log('\n========== 解析结果 ==========')
       console.log('候选人姓名:', result.candidateName)
@@ -160,12 +160,16 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         result.candidateName || '未知',
         result.content || '',
         result.parser,
-        result.structuredData?.model || ''
+        result.structuredData?.model || '',
+        result.evaluation ? JSON.stringify(result.evaluation) : null
       )
-      
+
       const newResume = resumeStmt.getById(insertResult.lastInsertRowid)
       console.log('数据库存储结果:', newResume)
-      
+      if (newResume?.evaluation) {
+        console.log('评估结果:', newResume.evaluation)
+      }
+
       res.json({ success: true, data: newResume })
     } catch (error) {
       console.error('上传简历失败:', error)
@@ -192,8 +196,9 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
     console.log('简历ID:', req.params.id)
     console.log('文件名:', resume.name)
     console.log('文件路径:', resume.file_path)
+    console.log('职位ID:', resume.position_id)
     
-    const result = await parserFactory.parse(resume.file_path, resume.name)
+    const result = await parserFactory.parse(resume.file_path, resume.name, resume.position_id)
     
     console.log('\n========== 解析结果 ==========')
     console.log('候选人姓名:', result.candidateName)
@@ -220,10 +225,14 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
       result.candidateName || '未知',
       result.content || '',
       result.parser,
-      result.structuredData?.model || ''
+      result.structuredData?.model || '',
+      result.evaluation ? JSON.stringify(result.evaluation) : null
     )
-    
+
     const updatedResume = resumeStmt.getById(req.params.id)
+    if (updatedResume?.evaluation) {
+      console.log('评估结果:', updatedResume.evaluation)
+    }
     res.json({ success: true, data: updatedResume })
   } catch (error) {
     console.error('重新解析失败:', error)

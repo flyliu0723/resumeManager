@@ -191,9 +191,14 @@ const resumeStmt = {
     return { lastInsertRowid: lastInsertRowid() }
   },
   updateContent: (id, candidate_name, content) => run('UPDATE resumes SET candidate_name = ?, content = ? WHERE id = ?', [candidate_name, content, id]),
-  updateParsedData: (id, parsed_data, candidate_name, content, parser, model) => {
-    const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
-    run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), id])
+  updateParsedData: (id, parsed_data, candidate_name, content, parser, model, evaluation = null) => {
+    if (evaluation) {
+      const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, evaluation = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
+      run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), String(evaluation), id])
+    } else {
+      const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
+      run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), id])
+    }
   },
   delete: (id) => run('DELETE FROM resumes WHERE id = ?', [id]),
   getByPosition: (position_id) => all('SELECT * FROM resumes WHERE position_id = ? ORDER BY created_at DESC', [position_id]),
