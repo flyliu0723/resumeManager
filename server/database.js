@@ -75,7 +75,7 @@ async function initDatabase() {
     }
   }
 
-  // AI 配置表
+// AI 配置表
   const configTableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_configs'")
   if (configTableCheck.length === 0) {
     db.run(`
@@ -94,10 +94,10 @@ async function initDatabase() {
     `)
     console.log('创建 ai_configs 表')
 
-    // 添加默认配置
-    db.run(`INSERT INTO ai_configs (name, provider, api_url, model, is_active, priority) VALUES (?, ?, ?, ?, ?, ?)`, 
-      ['Ollama 本地模型', 'ollama', 'http://localhost:11434', 'qwen2.5:1.5b', 1, 0])
-    console.log('添加默认 Ollama 配置')
+    // 添加默认配置 - 使用智谱GLM
+    db.run(`INSERT INTO ai_configs (name, provider, api_url, model, is_active, priority) VALUES (?, ?, ?, ?, ?, ?)`,
+      ['智谱GLM-4', 'zhipu', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4', 1, 0])
+    console.log('添加默认智谱GLM配置')
   }
   
   saveDatabase()

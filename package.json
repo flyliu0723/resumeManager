@@ -7,13 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "echo 'Start ResumeParser first: cd server/parser && python ResumeParserAPI.py' && node server/index.js",
+    "start": "node server/index.js",
     "start:all": "start.bat",
-    "start:server": "node server/index.js"
+    "start:server": "node server/index.js",
+    "server:install": "cd server && npm install"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.6.0",
     "element-plus": "^2.13.1",
+    "mammoth": "^1.6.0",
+    "pdf-parse": "^1.1.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.24",
     "vue-router": "^4.6.4"

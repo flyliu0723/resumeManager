@@ -481,6 +481,9 @@ app.get('/api/ai-providers', (req, res) => {
   res.json({
     success: true,
     data: [
+      { value: 'zhipu', label: '智谱GLM', fields: ['api_key', 'model'], apiUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+      { value: 'minimax', label: 'MiniMax', fields: ['api_key', 'model'], apiUrl: 'https://api.minimax.chat/v1' },
+      { value: 'deepseek', label: 'DeepSeek', fields: ['api_key', 'model'], apiUrl: 'https://api.deepseek.com' },
       { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] },
       { value: 'ollama', label: 'Ollama 本地模型', fields: ['api_url', 'model'] }
     ]
@@ -490,8 +493,25 @@ app.get('/api/ai-providers', (req, res) => {
 app.get('/api/ai-models', (req, res) => {
   const { provider } = req.query
   let models = []
-  
-  if (provider === 'openai') {
+
+  if (provider === 'zhipu') {
+    models = [
+      { value: 'glm-4', label: 'GLM-4 (推荐, 较强推理)' },
+      { value: 'glm-4v', label: 'GLM-4V (支持图像)' },
+      { value: 'glm-3-turbo', label: 'GLM-3 Turbo (快速, 便宜)' }
+    ]
+  } else if (provider === 'minimax') {
+    models = [
+      { value: 'abab6.5s-chat', label: 'abab6.5s-chat (快速)' },
+      { value: 'abab6.5-chat', label: 'abab6.5-chat (较强)' },
+      { value: 'abab5.5s-chat', label: 'abab5.5s-chat (便宜)' }
+    ]
+  } else if (provider === 'deepseek') {
+    models = [
+      { value: 'deepseek-chat', label: 'DeepSeek Chat (推荐, 性价比高)' },
+      { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner (推理强)' }
+    ]
+  } else if (provider === 'openai') {
     models = [
       { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (推荐, 快速)' },
       { value: 'gpt-4', label: 'GPT-4 (更智能, 较慢)' },
@@ -506,7 +526,7 @@ app.get('/api/ai-models', (req, res) => {
       { value: 'mistral:7b', label: 'Mistral 7B' }
     ]
   }
-  
+
   res.json({ success: true, data: models })
 })
 
@@ -516,10 +536,7 @@ async function startServer() {
     console.log('数据库初始化完成')
 
     parserFactory.init({
-      resumeParserAI: {
-        apiUrl: process.env.RESUME_PARSER_URL || 'http://localhost:5001',
-        timeout: 30000
-      }
+      unified: {}
     })
 
     console.log('当前解析器:', parserFactory.getCurrentParser())
@@ -529,6 +546,12 @@ async function startServer() {
       console.log(`Server running on http://localhost:${PORT}`)
       console.log(`Upload directory: ${UPLOAD_DIR}`)
       console.log(`Database file: ${path.join(__dirname, 'resume.db')}`)
+      console.log('\n支持的AI提供商:')
+      console.log('  - 智谱GLM (zhipu)')
+      console.log('  - MiniMax (minimax)')
+      console.log('  - DeepSeek (deepseek)')
+      console.log('  - OpenAI (openai)')
+      console.log('  - Ollama (ollama, 本地)')
     })
   } catch (error) {
     console.error('启动服务器失败:', error)

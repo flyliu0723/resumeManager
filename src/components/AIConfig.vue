@@ -7,122 +7,120 @@
 
     <div class="config-list">
       <el-table :data="configs" style="width: 100%" v-loading="loading">
-      <el-table-column prop="name" label="配置名称" min-width="120">
-        <template #default="{ row }">
-          <span>{{ row.name }}</span>
-          <el-tag v-if="row.is_active" type="success" size="small" class="active-tag">已启用</el-tag>
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="provider" label="提供商" min-width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.provider === 'openai' ? '' : 'warning'">
-            {{ getProviderLabel(row.provider) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="model" label="模型" min-width="120">
-        <template #default="{ row }">
-          <span>{{ row.model || '-' }}</span>
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="api_url" label="API 地址" min-width="150">
-        <template #default="{ row }">
-          <span class="api-url">{{ row.api_url || '-' }}</span>
-        </template>
-      </el-table-column>
-      
-      <el-table-column prop="priority" label="优先级" width="80" align="center">
-        <template #default="{ row }">
-          <span>{{ row.priority }}</span>
-        </template>
-      </el-table-column>
-      
-      <el-table-column label="操作" width="200" align="center">
-        <template #default="{ row }">
-          <el-button-group>
-            <el-button type="primary" size="small" @click="testConfig(row)">测试</el-button>
-            <el-button type="success" size="small" @click="setActive(row)" :disabled="row.is_active">启用</el-button>
-            <el-button type="warning" size="small" @click="editConfig(row)">编辑</el-button>
-            <el-button type="danger" size="small" @click="deleteConfig(row)">删除</el-button>
-          </el-button-group>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column prop="name" label="配置名称" min-width="120">
+          <template #default="{ row }">
+            <span>{{ row.name }}</span>
+            <el-tag v-if="row.is_active" type="success" size="small" class="active-tag">已启用</el-tag>
+          </template>
+        </el-table-column>
 
-    <div v-if="configs.length === 0 && !loading" class="empty-tip">
-      <el-empty description="暂无 AI 配置" />
+        <el-table-column prop="provider" label="提供商" min-width="100">
+          <template #default="{ row }">
+            <el-tag :type="getProviderTagType(row.provider)">
+              {{ getProviderLabel(row.provider) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="model" label="模型" min-width="120">
+          <template #default="{ row }">
+            <span>{{ row.model || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="api_url" label="API 地址" min-width="150">
+          <template #default="{ row }">
+            <span class="api-url">{{ row.api_url || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="priority" label="优先级" width="80" align="center">
+          <template #default="{ row }">
+            <span>{{ row.priority }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="200" align="center">
+          <template #default="{ row }">
+            <el-button-group>
+              <el-button type="primary" size="small" @click="testConfig(row)">测试</el-button>
+              <el-button type="success" size="small" @click="setActive(row)" :disabled="row.is_active">启用</el-button>
+              <el-button type="warning" size="small" @click="editConfig(row)">编辑</el-button>
+              <el-button type="danger" size="small" @click="deleteConfig(row)">删除</el-button>
+            </el-button-group>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="configs.length === 0 && !loading" class="empty-tip">
+        <el-empty description="暂无 AI 配置" />
+      </div>
     </div>
-  </div>
-  </div>
 
-  <!-- 添加/编辑对话框 -->
-  <el-dialog 
-    v-model="dialogVisible" 
-    :title="isEdit ? '编辑配置' : '添加配置'" 
-    width="500px"
-    :close-on-click-modal="false"
-  >
-    <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
-      <el-form-item label="配置名称" prop="name">
-        <el-input v-model="formData.name" placeholder="如: OpenAI GPT-3.5" />
-      </el-form-item>
-      
-      <el-form-item label="提供商" prop="provider">
-        <el-select v-model="formData.provider" placeholder="选择提供商" @change="handleProviderChange">
-          <el-option 
-            v-for="provider in providers" 
-            :key="provider.value" 
-            :label="provider.label" 
-            :value="provider.value" 
-          />
-        </el-select>
-      </el-form-item>
-      
-      <el-form-item v-if="formData.provider === 'openai'" label="API Key" prop="api_key">
-        <el-input v-model="formData.api_key" placeholder="sk-..." show-password />
-        <div class="form-tip">在 OpenAI 官网获取: https://platform.openai.com/api-keys</div>
-      </el-form-item>
-      
-      <el-form-item label="API 地址" prop="api_url">
-        <el-input v-model="formData.api_url" :placeholder="getApiUrlPlaceholder()" />
-      </el-form-item>
-      
-      <el-form-item label="模型" prop="model">
-        <el-select v-model="formData.model" placeholder="选择模型" filterable allow-create>
-          <el-option 
-            v-for="model in availableModels" 
-            :key="model.value" 
-            :label="model.label" 
-            :value="model.value" 
-          />
-        </el-select>
-      </el-form-item>
-      
-      <el-form-item label="优先级">
-        <el-input-number v-model="formData.priority" :min="0" :max="99" />
-        <span class="form-tip">数字越小优先级越高</span>
-      </el-form-item>
-    </el-form>
-    
-    <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="saveConfig" :loading="saving">保存</el-button>
-    </template>
-  </el-dialog>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="isEdit ? '编辑配置' : '添加配置'"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="formData" :rules="rules" ref="formRef" label-width="100px">
+        <el-form-item label="配置名称" prop="name">
+          <el-input v-model="formData.name" placeholder="如: 智谱GLM-4" />
+        </el-form-item>
 
-  <!-- 测试结果对话框 -->
-  <el-dialog v-model="testDialogVisible" title="测试结果" width="400px">
-    <div :class="['test-result', testResult.success ? 'success' : 'error']">
-      <el-icon :size="48">
-        <CircleCheck v-if="testResult.success" />
-        <CircleClose v-else />
-      </el-icon>
-      <p>{{ testResult.message }}</p>
-    </div>
-  </el-dialog>
+        <el-form-item label="提供商" prop="provider">
+          <el-select v-model="formData.provider" placeholder="选择提供商" @change="handleProviderChange">
+            <el-option
+              v-for="provider in providers"
+              :key="provider.value"
+              :label="provider.label"
+              :value="provider.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item v-if="['zhipu', 'minimax', 'deepseek', 'openai'].includes(formData.provider)" label="API Key" prop="api_key">
+          <el-input v-model="formData.api_key" placeholder="输入 API Key" show-password />
+          <div class="form-tip">{{ getApiKeyTip() }}</div>
+        </el-form-item>
+
+        <el-form-item label="API 地址" prop="api_url">
+          <el-input v-model="formData.api_url" :placeholder="getApiUrlPlaceholder()" />
+        </el-form-item>
+
+        <el-form-item label="模型" prop="model">
+          <el-select v-model="formData.model" placeholder="选择模型" filterable allow-create>
+            <el-option
+              v-for="model in availableModels"
+              :key="model.value"
+              :label="model.label"
+              :value="model.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="优先级">
+          <el-input-number v-model="formData.priority" :min="0" :max="99" />
+          <span class="form-tip">数字越小优先级越高</span>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveConfig" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="testDialogVisible" title="测试结果" width="400px">
+      <div :class="['test-result', testResult.success ? 'success' : 'error']">
+        <el-icon :size="48">
+          <CircleCheck v-if="testResult.success" />
+          <CircleClose v-else />
+        </el-icon>
+        <p>{{ testResult.message }}</p>
+      </div>
+    </el-dialog>
+  </div>
 </template>
 
 <script setup>
@@ -147,9 +145,9 @@ const availableModels = ref([])
 const formData = ref({
   id: null,
   name: '',
-  provider: 'ollama',
+  provider: 'zhipu',
   api_key: '',
-  api_url: '',
+  api_url: 'https://open.bigmodel.cn/api/paas/v4',
   model: '',
   priority: 0
 })
@@ -157,7 +155,7 @@ const formData = ref({
 const rules = {
   name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
   provider: [{ required: true, message: '请选择提供商', trigger: 'change' }],
-  api_url: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }]
+  api_key: [{ required: true, message: '请输入 API Key', trigger: 'blur' }]
 }
 
 const getProviderLabel = (provider) => {
@@ -165,23 +163,50 @@ const getProviderLabel = (provider) => {
   return found ? found.label : provider
 }
 
-const getApiUrlPlaceholder = () => {
-  if (formData.value.provider === 'openai') {
-    return 'https://api.openai.com/v1'
+const getProviderTagType = (provider) => {
+  const types = {
+    zhipu: 'success',
+    minimax: 'warning',
+    deepseek: '',
+    openai: 'info',
+    ollama: 'warning'
   }
-  return 'http://localhost:11434'
+  return types[provider] || ''
+}
+
+const getApiKeyTip = () => {
+  const tips = {
+    zhipu: '在智谱AI开放平台获取: https://open.bigmodel.cn/usercenter/apikeys',
+    minimax: '在MiniMax开放平台获取: https://api.minimax.chat/user-center/basics',
+    deepseek: '在DeepSeek官网获取: https://platform.deepseek.com/api-keys',
+    openai: '在 OpenAI 官网获取: https://platform.openai.com/api-keys'
+  }
+  return tips[formData.value.provider] || ''
+}
+
+const getApiUrlPlaceholder = () => {
+  const placeholders = {
+    zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+    minimax: 'https://api.minimax.chat/v1',
+    deepseek: 'https://api.deepseek.com',
+    openai: 'https://api.openai.com/v1',
+    ollama: 'http://localhost:11434'
+  }
+  return placeholders[formData.value.provider] || ''
 }
 
 const handleProviderChange = () => {
-  // 加载模型列表
   fetchModels(formData.value.provider)
-  
-  // 设置默认 API 地址
-  if (formData.value.provider === 'openai') {
-    formData.value.api_url = 'https://api.openai.com/v1'
-  } else {
-    formData.value.api_url = 'http://localhost:11434'
+
+  const defaultUrls = {
+    zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+    minimax: 'https://api.minimax.chat/v1',
+    deepseek: 'https://api.deepseek.com',
+    openai: 'https://api.openai.com/v1',
+    ollama: 'http://localhost:11434'
   }
+
+  formData.value.api_url = defaultUrls[formData.value.provider] || ''
   formData.value.model = ''
 }
 
@@ -229,13 +254,13 @@ const showAddDialog = () => {
   formData.value = {
     id: null,
     name: '',
-    provider: 'ollama',
+    provider: 'zhipu',
     api_key: '',
-    api_url: 'http://localhost:11434',
-    model: 'qwen2.5:1.5b',
+    api_url: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4',
     priority: configs.value.length
   }
-  fetchModels('ollama')
+  fetchModels('zhipu')
   dialogVisible.value = true
 }
 
@@ -250,21 +275,21 @@ const saveConfig = async () => {
   try {
     await formRef.value.validate()
     saving.value = true
-    
-    const url = isEdit.value 
+
+    const url = isEdit.value
       ? `${API_BASE}/api/ai-configs/${formData.value.id}`
       : `${API_BASE}/api/ai-configs`
-    
+
     const method = isEdit.value ? 'PUT' : 'POST'
-    
+
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formData.value)
     })
-    
+
     const data = await res.json()
-    
+
     if (data.success) {
       ElMessage.success(isEdit.value ? '更新成功' : '添加成功')
       dialogVisible.value = false
@@ -300,12 +325,12 @@ const setActive = async (config) => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     const res = await fetch(`${API_BASE}/api/ai-configs/${config.id}/set-active`, {
       method: 'POST'
     })
     const data = await res.json()
-    
+
     if (data.success) {
       ElMessage.success('已启用')
       fetchConfigs()
@@ -324,12 +349,12 @@ const deleteConfig = async (config) => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    
+
     const res = await fetch(`${API_BASE}/api/ai-configs/${config.id}`, {
       method: 'DELETE'
     })
     const data = await res.json()
-    
+
     if (data.success) {
       ElMessage.success('删除成功')
       fetchConfigs()
