@@ -521,8 +521,6 @@ app.get('/api/ai-models', (req, res) => {
   res.json({ success: true, data: models })
 })
 
-  res.json({ success: true, data: models })
-})
 
 async function startServer() {
   try {
