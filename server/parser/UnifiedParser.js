@@ -1,5 +1,6 @@
 const { extractTextFromFile } = require('../pdfService')
 const AIService = require('../aiService')
+const path = require('path')
 
 class UnifiedParser {
   constructor(options = {}) {
@@ -60,7 +61,7 @@ class UnifiedParser {
 
       if (this.useFallback) {
         console.log('使用 Fallback 规则解析...')
-        return this.parseWithFallback(filePath, startTime)
+        return this.parseWithFallback(filePath, startTime, originalName)
       }
 
       throw error
@@ -126,14 +127,19 @@ class UnifiedParser {
     return urls[provider] || ''
   }
 
-  async parseWithFallback(filePath, startTime) {
+  async parseWithFallback(filePath, startTime, originalName = '') {
     const text = await extractTextFromFile(filePath)
     const result = this.fallbackParse(text)
 
     const duration = (Date.now() - startTime) / 1000
 
+    const nameFromFile = this.extractNameFromFileName(originalName)
+    const nameFromContent = result.name
+
+    let candidateName = nameFromContent !== '未知' ? nameFromContent : (nameFromFile || '未知')
+
     return {
-      candidateName: result.name || '未知',
+      candidateName: candidateName,
       content: text?.slice(0, 5000) || '',
       structuredData: {
         email: result.email,
@@ -150,7 +156,31 @@ class UnifiedParser {
     }
   }
 
-  fallbackParse(text) {
+  extractNameFromFileName(fileName) {
+    if (!fileName) return null
+
+    const ext = path.extname(fileName)
+    const baseName = path.basename(fileName, ext)
+
+    let cleaned = baseName
+      .replace(/^\d+_/, '')
+      .replace(/[-_]+/g, ' ')
+      .trim()
+
+    const firstWord = cleaned.split(' ')[0]
+
+    if (firstWord && firstWord.length >= 2 && firstWord.length <= 10 && !/^\d+$/.test(firstWord)) {
+      return firstWord
+    }
+
+    if (cleaned.length >= 2 && cleaned.length <= 10 && !/^\d+$/.test(cleaned)) {
+      return cleaned
+    }
+
+    return null
+  }
+
+  fallbackParse(text, fileName = '') {
     if (!text) {
       return {
         name: '未知',
