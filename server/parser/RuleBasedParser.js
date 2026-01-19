@@ -2,11 +2,10 @@ const fs = require('fs')
 const path = require('path')
 const pdfParse = require('pdf-parse')
 const mammoth = require('mammoth')
-const BaseParser = require('./index')
 
-class RuleBasedParser extends BaseParser {
+class RuleBasedParser {
   constructor(options = {}) {
-    super(options)
+    this.options = options || {}
     this.namePatterns = [
       /^姓\s*名[：:\s]*([^\s\u4e00-\u9fa5]{1,10})/i,
       /^Name[：:]\s*([^\s]+)/i,
