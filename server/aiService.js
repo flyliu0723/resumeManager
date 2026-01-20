@@ -1,5 +1,5 @@
 const axios = require('axios')
-const promptService = require('../promptService')
+const promptService = require('./promptService')
 
 class AIService {
   constructor(config) {
