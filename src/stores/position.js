@@ -5,6 +5,8 @@ const API_BASE = 'http://localhost:3000/api'
 
 export const usePositionStore = defineStore('position', () => {
   const positions = ref([])
+  const activePositions = ref([])
+  const archivedPositions = ref([])
   const currentPositionId = ref(null)
   const resumes = ref({})
 
@@ -13,14 +15,153 @@ export const usePositionStore = defineStore('position', () => {
       const res = await fetch(`${API_BASE}/positions`)
       const data = await res.json()
       if (data.success) {
-        positions.value = data.data
-        if (positions.value.length > 0 && !currentPositionId.value) {
-          currentPositionId.value = positions.value[0].id
+        activePositions.value = data.data.active || []
+        archivedPositions.value = data.data.archived || []
+        positions.value = [...activePositions.value, ...archivedPositions.value]
+        
+        if (activePositions.value.length > 0 && !currentPositionId.value) {
+          currentPositionId.value = activePositions.value[0].id
           fetchResumes(currentPositionId.value)
         }
       }
     } catch (error) {
       console.error('获取职位列表失败:', error)
+    }
+  }
+
+  async function archivePosition(id, reason) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        const index = activePositions.value.findIndex(p => p.id === Number(id))
+        if (index > -1) {
+          const [archived] = activePositions.value.splice(index, 1)
+          archived.archive_reason = reason
+          archived.status = 'archived'
+          archivedPositions.value.unshift(archived)
+        }
+        
+        if (currentPositionId.value === Number(id)) {
+          currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('归档职位失败:', error)
+      return false
+    }
+  }
+
+  async function restorePosition(id) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${id}/restore`, {
+        method: 'POST'
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        const index = archivedPositions.value.findIndex(p => p.id === Number(id))
+        if (index > -1) {
+          const [restored] = archivedPositions.value.splice(index, 1)
+          restored.status = 'active'
+          restored.archive_reason = null
+          restored.archived_at = null
+          activePositions.value.unshift(restored)
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('恢复职位失败:', error)
+      return false
+    }
+  }
+
+  const positionNotes = ref({})
+
+  async function fetchPositionNotes(positionId) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${positionId}/notes`)
+      const data = await res.json()
+      if (data.success) {
+        positionNotes.value[positionId] = data.data || []
+      }
+    } catch (error) {
+      console.error('获取职位补充失败:', error)
+    }
+  }
+
+  async function addPositionNote(positionId, content) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${positionId}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      })
+      const data = await res.json()
+      if (data.success) {
+        if (!positionNotes.value[positionId]) {
+          positionNotes.value[positionId] = []
+        }
+        positionNotes.value[positionId].push(data.data)
+        return data.data
+      }
+      return null
+    } catch (error) {
+      console.error('添加职位补充失败:', error)
+      return null
+    }
+  }
+
+  async function updatePositionNote(positionId, noteId, content) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${positionId}/notes/${noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      })
+      const data = await res.json()
+      if (data.success) {
+        const notes = positionNotes.value[positionId] || []
+        const index = notes.findIndex(n => n.id === noteId)
+        if (index > -1) {
+          notes[index] = data.data
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('更新职位补充失败:', error)
+      return false
+    }
+  }
+
+  async function deletePositionNote(positionId, noteId) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${positionId}/notes/${noteId}`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        const notes = positionNotes.value[positionId] || []
+        const index = notes.findIndex(n => n.id === noteId)
+        if (index > -1) {
+          notes.splice(index, 1)
+        }
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('删除职位补充失败:', error)
+      return false
     }
   }
 
@@ -33,13 +174,21 @@ export const usePositionStore = defineStore('position', () => {
       })
       const data = await res.json()
       
+      console.log('添加职位响应:', data)
+      
       if (data.success && data.data) {
-        positions.value.unshift(data.data)
-        currentPositionId.value = data.data.id
-        resumes.value[data.data.id] = []
+        activePositions.value.unshift(data.data)
+        positions.value = [...activePositions.value, ...archivedPositions.value]
+        if (!currentPositionId.value || currentPositionId.value !== data.data.id) {
+          currentPositionId.value = data.data.id
+        }
+        if (!resumes.value[data.data.id]) {
+          resumes.value[data.data.id] = []
+        }
         return data.data.id
       }
-      return null
+      console.warn('添加失败，响应数据:', data)
+      return data.data?.id || null
     } catch (error) {
       console.error('添加职位失败:', error)
       return null
@@ -54,16 +203,48 @@ export const usePositionStore = defineStore('position', () => {
         body: JSON.stringify(position)
       })
       const data = await res.json()
+      
       if (data.success) {
-        const index = positions.value.findIndex(p => p.id === id)
+        const index = activePositions.value.findIndex(p => p.id === Number(id))
         if (index > -1) {
-          positions.value[index] = data.data
+          activePositions.value[index] = data.data
         }
+        positions.value = [...activePositions.value, ...archivedPositions.value]
         return true
+      }
+      if (data.message === '已归档的职位不能编辑') {
+        ElMessage.warning('已归档的职位不能编辑')
+        return false
       }
       return false
     } catch (error) {
       console.error('更新职位失败:', error)
+      return false
+    }
+  }
+
+  async function deletePosition(id) {
+    try {
+      const res = await fetch(`${API_BASE}/positions/${id}`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        const index = activePositions.value.findIndex(p => p.id === Number(id))
+        if (index > -1) {
+          activePositions.value.splice(index, 1)
+        }
+        
+        if (currentPositionId.value === Number(id)) {
+          currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
+        }
+        delete resumes.value[id]
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('删除职位失败:', error)
       return false
     }
   }
@@ -83,6 +264,19 @@ export const usePositionStore = defineStore('position', () => {
     } catch (error) {
       console.error('获取简历列表失败:', error)
     }
+  }
+
+  async function fetchResumeDetail(resumeId) {
+    try {
+      const res = await fetch(`${API_BASE}/resumes/${resumeId}`)
+      const data = await res.json()
+      if (data.success) {
+        return data.data
+      }
+    } catch (error) {
+      console.error('获取简历详情失败:', error)
+    }
+    return null
   }
 
   async function addResume(positionId, resume) {
@@ -133,7 +327,6 @@ export const usePositionStore = defineStore('position', () => {
             break
           }
         }
-        // 刷新当前职位的简历列表，确保数据一致
         if (currentPositionId.value) {
           await fetchResumes(currentPositionId.value)
         }
@@ -156,12 +349,24 @@ export const usePositionStore = defineStore('position', () => {
 
   return {
     positions,
+    activePositions,
+    archivedPositions,
     currentPositionId,
     resumes,
+    positionNotes,
     fetchPositions,
+    archivePosition,
+    restorePosition,
+    fetchPositionNotes,
+    addPositionNote,
+    updatePositionNote,
+    deletePositionNote,
     addPosition,
     updatePosition,
+    deletePosition,
     setCurrentPosition,
+    fetchResumes,
+    fetchResumeDetail,
     addResume,
     deleteResume,
     getCurrentPosition,

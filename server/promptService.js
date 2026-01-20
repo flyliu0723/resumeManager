@@ -35,6 +35,24 @@ class PromptService {
       .replace('{jd_text}', jdText || '暂无职位描述')
   }
 
+  getCombinedEvaluationPrompt(resumeJson, jdText) {
+    const template = this.loadPrompt('combined_evaluation')
+    return template
+      .replace('{resume_json}', JSON.stringify(resumeJson, null, 2))
+      .replace('{jd_text}', jdText || '暂无职位描述')
+  }
+
+  clearCache() {
+    this.prompts = {}
+  }
+
+  getQuestionsPrompt(resumeText, jdText) {
+    const template = this.loadPrompt('questions')
+    return template
+      .replace('{resume_text_or_structured_data}', resumeText || '暂无简历内容')
+      .replace('{jd_text_or_structured_data}', jdText || '暂无职位描述')
+  }
+
   clearCache() {
     this.prompts = {}
   }

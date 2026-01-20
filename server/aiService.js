@@ -57,6 +57,52 @@ class AIService {
     }
   }
 
+  async evaluateAndGenerateQuestions(resumeJson, jdText) {
+    const prompt = promptService.getCombinedEvaluationPrompt(resumeJson, jdText)
+
+    if (!this.activeConfig || !this.activeConfig.api_key) {
+      throw new Error('未配置AI服务')
+    }
+
+    const { provider, api_key, api_url, model } = this.activeConfig
+
+    switch (provider) {
+      case 'zhipu':
+        return this.combinedEvaluateWithZhipu(api_key, api_url, model, prompt)
+      case 'minimax':
+        return this.combinedEvaluateWithMinimax(api_key, api_url, model, prompt)
+      case 'deepseek':
+        return this.combinedEvaluateWithDeepseek(api_key, api_url, model, prompt)
+      case 'openai':
+        return this.combinedEvaluateWithOpenAI(api_key, api_url, model, prompt)
+      default:
+        throw new Error(`不支持的提供商: ${provider}`)
+    }
+  }
+
+  async generateQuestions(resumeText, jdText) {
+    const prompt = promptService.getQuestionsPrompt(resumeText, jdText)
+
+    if (!this.activeConfig || !this.activeConfig.api_key) {
+      throw new Error('未配置AI服务')
+    }
+
+    const { provider, api_key, api_url, model } = this.activeConfig
+
+    switch (provider) {
+      case 'zhipu':
+        return this.questionsWithZhipu(api_key, api_url, model, prompt)
+      case 'minimax':
+        return this.questionsWithMinimax(api_key, api_url, model, prompt)
+      case 'deepseek':
+        return this.questionsWithDeepseek(api_key, api_url, model, prompt)
+      case 'openai':
+        return this.questionsWithOpenAI(api_key, api_url, model, prompt)
+      default:
+        throw new Error(`不支持的提供商: ${provider}`)
+    }
+  }
+
   async parseWithZhipu(apiKey, apiUrl, model, prompt) {
     try {
       const response = await axios.post(
@@ -103,6 +149,31 @@ class AIService {
       return response.data.choices[0].message.content.trim()
     } catch (error) {
       console.error('智谱GLM评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async questionsWithZhipu(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'glm-4',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('智谱GLM问题生成失败:', error.response?.data || error.message)
       throw error
     }
   }
@@ -157,6 +228,31 @@ class AIService {
     }
   }
 
+  async questionsWithMinimax(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/text/chatcompletion_v2`,
+        {
+          model: model || 'abab6.5s-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('MiniMax问题生成失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
   async parseWithDeepseek(apiKey, apiUrl, model, prompt) {
     try {
       const response = await axios.post(
@@ -203,6 +299,31 @@ class AIService {
       return response.data.choices[0].message.content.trim()
     } catch (error) {
       console.error('DeepSeek评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async questionsWithDeepseek(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'deepseek-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('DeepSeek问题生成失败:', error.response?.data || error.message)
       throw error
     }
   }
@@ -254,6 +375,153 @@ class AIService {
     } catch (error) {
       console.error('OpenAI评估失败:', error.response?.data || error.message)
       throw error
+    }
+  }
+
+  async questionsWithOpenAI(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 3000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 90000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('OpenAI问题生成失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async combinedEvaluateWithZhipu(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'glm-4',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 4000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 120000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('智谱GLM合并评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async combinedEvaluateWithMinimax(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/text/chatcompletion_v2`,
+        {
+          model: model || 'abab6.5-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 4000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 120000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('MiniMax合并评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async combinedEvaluateWithDeepseek(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'deepseek-chat',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 4000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 120000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('DeepSeek合并评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  async combinedEvaluateWithOpenAI(apiKey, apiUrl, model, prompt) {
+    try {
+      const response = await axios.post(
+        `${apiUrl}/chat/completions`,
+        {
+          model: model || 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 4000
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          timeout: 120000
+        }
+      )
+      return this.parseQuestionsResponse(response.data)
+    } catch (error) {
+      console.error('OpenAI合并评估失败:', error.response?.data || error.message)
+      throw error
+    }
+  }
+
+  parseQuestionsResponse(data) {
+    const content = data.choices[0].message.content.trim()
+
+    let jsonStr = content
+    if (content.startsWith('```json')) {
+      jsonStr = content.slice(7)
+    } else if (content.startsWith('```')) {
+      jsonStr = content.slice(3)
+    }
+    if (jsonStr.endsWith('```')) {
+      jsonStr = jsonStr.slice(0, -3)
+    }
+    jsonStr = jsonStr.trim()
+
+    try {
+      return JSON.parse(jsonStr)
+    } catch (e) {
+      console.error('问题JSON解析失败:', jsonStr)
+      throw new Error('AI返回问题内容格式错误')
     }
   }
 

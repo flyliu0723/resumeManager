@@ -8,6 +8,12 @@ async function extractTextFromFile(filePath) {
   }
 
   const ext = path.extname(filePath).toLowerCase()
+  const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.heic']
+
+  if (imageExts.includes(ext)) {
+    console.error('不支持的图片文件格式:', ext)
+    throw new Error(`不支持的图片格式 ${ext}，请上传 PDF、Word 或文本文件`)
+  }
 
   if (ext === '.pdf' || isPdfByContent(filePath)) {
     return await extractTextFromPDF(filePath)

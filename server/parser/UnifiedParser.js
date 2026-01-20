@@ -24,7 +24,11 @@ class UnifiedParser {
       console.log(`提取文本长度: ${text?.length || 0} 字符`)
 
       if (!text || (text.trim && text.trim().length < 10)) {
-        throw new Error('无法提取足够的文本内容')
+        const ext = path.extname(originalName || '').toLowerCase()
+        if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext)) {
+          throw new Error(`不支持的图片格式 ${ext}，请上传 PDF 或 Word 格式的简历`)
+        }
+        throw new Error('无法提取简历内容，请确保文件包含可识别的文本')
       }
 
       const result = await this.parseWithAI(text)
@@ -47,6 +51,8 @@ class UnifiedParser {
           skills: result.skills || [],
           education: result.education,
           experience: result.experience,
+          work_experience: result.work_experience || null,
+          project_experience: result.project_experience || null,
           companies: result.companies || [],
           ai_summary: result.experience
         },
@@ -61,6 +67,8 @@ class UnifiedParser {
       console.log(`邮箱: ${finalResult.structuredData.email}`)
       console.log(`手机: ${finalResult.structuredData.mobile}`)
       console.log(`技能: ${finalResult.structuredData.skills}`)
+      console.log(`工作经历摘要: ${finalResult.structuredData.work_experience?.slice(0, 50) || '无'}...`)
+      console.log(`项目经历摘要: ${finalResult.structuredData.project_experience?.slice(0, 50) || '无'}...`)
       if (evaluation) {
         console.log(`匹配度: ${evaluation.matchLevel}`)
         console.log(`评估原因: ${evaluation.reason?.slice(0, 100)}...`)
