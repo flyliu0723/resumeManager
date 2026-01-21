@@ -157,7 +157,7 @@ const editingNoteContent = ref('')
 
 const handleSelectCandidate = async (candidate) => {
   selectedCandidate.value = candidate
-  selectedCandidateDetail.value = await store.fetchResumeDetail(candidate.id)
+  selectedCandidateDetail.value = candidate
   console.log("🚀 ~ handleSelectCandidate ~ selectedCandidateDetail.value:", selectedCandidateDetail.value)
 }
 
@@ -256,10 +256,11 @@ const handleFileChange = (file) => {
     
     // 轮询检查评估进度
     if (store.currentPositionId) {
-      const resumes = store.getPositionResumes(store.currentPositionId)
-      const newResume = resumes[resumes.length - 1]
-      if (newResume) {
-        await pollResumeDetail(newResume.id, 10)
+      await store.fetchResumes(store.currentPositionId)
+      const matches = store.getPositionResumes(store.currentPositionId)
+      const newMatch = matches[0]
+      if (newMatch) {
+        await pollMatchDetail(newMatch.id, 20)
       }
     }
   }).catch((error) => {
@@ -271,23 +272,63 @@ const handleFileChange = (file) => {
 const handleParse = async () => {
   if (!selectedCandidate.value) return
   
+  const resumeId = selectedCandidate.value.resume_id
+  const positionId = selectedCandidate.value.position_id
+  
+  if (!resumeId) {
+    ElMessage.error('简历ID不存在')
+    return
+  }
+  
   parsing.value = true
   try {
-    const res = await fetch(`http://localhost:3000/api/resumes/${selectedCandidate.value.id}/parse`, {
+    const res = await fetch(`http://localhost:3000/api/resumes/${resumeId}/parse?positionId=${positionId}`, {
       method: 'POST'
     })
     const data = await res.json()
     
     if (data.success) {
-      ElMessage.success('解析完成，正在进行匹配评估...')
+      ElMessage.success('解析已开始，请稍后...')
       
-      // 轮询检查评估进度
-      await pollResumeDetail(selectedCandidate.value.id, 10)
+      await pollResumeDetail(resumeId, 10)
     } else {
       ElMessage.error('解析失败: ' + data.message)
     }
   } catch (error) {
     ElMessage.error('解析失败: ' + error.message)
+  } finally {
+    parsing.value = false
+  }
+}
+
+const handleEvaluate = async () => {
+  if (!selectedCandidate.value) return
+  
+  const matchId = selectedCandidate.value.id
+  const resumeId = selectedCandidate.value.resume_id
+  const positionId = selectedCandidate.value.position_id
+  
+  if (!matchId || !resumeId || !positionId) {
+    ElMessage.error('缺少必要的信息')
+    return
+  }
+  
+  evaluating.value = true
+  try {
+    const res = await fetch(`http://localhost:3000/api/positions/${positionId}/resumes/${resumeId}/evaluate`, {
+      method: 'POST'
+    })
+    const data = await res.json()
+    
+    if (data.success) {
+      ElMessage.success('匹配评估已开始，请稍后...')
+      
+      await pollMatchDetail(matchId, 10)
+    } else {
+      ElMessage.error('评估失败: ' + data.message)
+    }
+  } catch (error) {
+    ElMessage.error('评估失败: ' + error.message)
   } finally {
     evaluating.value = false
   }
@@ -307,28 +348,30 @@ async function pollResumeDetail(resumeId, maxAttempts = 20) {
   selectedCandidateDetail.value = await store.fetchResumeDetail(resumeId)
 }
 
-const handleEvaluate = async () => {
-  if (!selectedCandidate.value) return
-  
-  evaluating.value = true
-  try {
-    const res = await fetch(`http://localhost:3000/api/resumes/${selectedCandidate.value.id}/evaluate`, {
-      method: 'POST'
-    })
-    const data = await res.json()
-    
-    if (data.success) {
-      ElMessage.success('匹配评估已开始，请稍后...')
-      
-      // 轮询检查评估进度
-      await pollResumeDetail(selectedCandidate.value.id, 10)
-    } else {
-      ElMessage.error('评估失败: ' + data.message)
+async function pollMatchDetail(matchId, maxAttempts = 20) {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 500))
+    if (store.currentPositionId) {
+      await store.fetchResumes(store.currentPositionId)
+      const matches = store.getPositionResumes(store.currentPositionId)
+      const match = matches.find(m => m.id === matchId)
+      if (match && match.evaluation) {
+        selectedCandidateDetail.value = match
+        selectedCandidate.value = match
+        ElMessage.success('评估完成')
+        return
+      }
     }
-  } catch (error) {
-    ElMessage.error('评估失败: ' + error.message)
-  } finally {
-    evaluating.value = false
+  }
+  // 超时后仍然刷新一次
+  if (store.currentPositionId) {
+    await store.fetchResumes(store.currentPositionId)
+    const matches = store.getPositionResumes(store.currentPositionId)
+    const match = matches.find(m => m.id === matchId)
+    if (match) {
+      selectedCandidateDetail.value = match
+      selectedCandidate.value = match
+    }
   }
 }
 

@@ -28,10 +28,10 @@
         :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
         @click="selectCandidate(candidate)"
       >
-        <div class="candidate-avatar">{{ getAvatarText(candidate.name) }}</div>
+        <div class="candidate-avatar">{{ getAvatarText(getCandidateName(candidate)) }}</div>
         <div class="candidate-info">
           <div class="candidate-name">
-            {{ candidate.name || '未知候选人' }}
+            {{ getCandidateName(candidate) || '未知候选人' }}
           </div>
           <div class="candidate-experience">
             {{ getExperienceText(candidate) }}
@@ -72,15 +72,22 @@ const getAvatarText = (name) => {
   return name.charAt(0).toUpperCase()
 }
 
+const getCandidateName = (candidate) => {
+  return candidate.candidate_name || candidate.name
+}
+
 const getExperienceText = (candidate) => {
+  const pd = candidate.parsed_data_obj || candidate.parsed_data || {}
   const experiences = []
-  if (candidate.latest_title) {
-    experiences.push(candidate.latest_title)
+  if (pd.latest_title) {
+    experiences.push(pd.latest_title)
   }
-  if (candidate.latest_company) {
-    experiences.push(candidate.latest_company)
+  if (pd.latest_company) {
+    experiences.push(pd.latest_company)
   }
-  if (candidate.years_experience) {
+  if (pd.years_experience) {
+    experiences.push(`${pd.years_experience}年`)
+  } else if (candidate.years_experience) {
     experiences.push(`${candidate.years_experience}年`)
   }
   return experiences.join(' · ') || '暂无经历'

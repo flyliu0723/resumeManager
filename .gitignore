@@ -51,3 +51,4 @@ server/parser/resume_parser/models
 *.temp
 
 node_modules/
+nul

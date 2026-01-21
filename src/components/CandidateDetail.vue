@@ -6,10 +6,10 @@
 
     <template v-else>
       <div class="detail-header">
-        <div class="header-top">
-          <div class="candidate-avatar-lg">{{ getAvatarText(parsedData.name || candidate?.name) }}</div>
-          <div class="header-info">
-            <h3>{{ parsedData.name || candidate?.name || '未知候选人' }}</h3>
+          <div class="header-top">
+            <div class="candidate-avatar-lg">{{ getAvatarText(parsedData.name || candidate?.candidate_name) }}</div>
+            <div class="header-info">
+              <h3>{{ parsedData.name || candidate?.candidate_name || '未知候选人' }}</h3>
             <div class="subtitle-row">
               <span class="subtitle">{{ getExperienceText(candidate) }}</span>
               <el-tag :type="getStatusType(candidate.status)" size="small">{{ getStatusText(candidate.status) }}</el-tag>
@@ -229,31 +229,12 @@ const parsedData = computed(() => {
 
 const evaluationData = computed(() => {
   if (!props.candidate) return {}
-  if (props.candidate.evaluation) {
-    try {
-      return typeof props.candidate.evaluation === 'string' 
-        ? JSON.parse(props.candidate.evaluation) 
-        : props.candidate.evaluation
-    } catch (e) {
-      return {}
-    }
-  }
-  return {}
+  return props.candidate.evaluation_obj || {}
 })
 
 const questionsList = computed(() => {
   if (!props.candidate) return []
-  if (props.candidate.questions) {
-    try {
-      const q = typeof props.candidate.questions === 'string'
-        ? JSON.parse(props.candidate.questions)
-        : props.candidate.questions
-      return Array.isArray(q) ? q : []
-    } catch (e) {
-      return []
-    }
-  }
-  return []
+  return props.candidate.questions_list || []
 })
 
 const hasParsedData = computed(() => {

@@ -9,6 +9,7 @@ export const usePositionStore = defineStore('position', () => {
   const archivedPositions = ref([])
   const currentPositionId = ref(null)
   const resumes = ref({})
+  const matches = ref({})
 
   async function fetchPositions() {
     try {
@@ -259,7 +260,7 @@ export const usePositionStore = defineStore('position', () => {
       const res = await fetch(`${API_BASE}/positions/${positionId}/resumes`)
       const data = await res.json()
       if (data.success) {
-        resumes.value[positionId] = data.data
+        matches.value[positionId] = data.data
       }
     } catch (error) {
       console.error('获取简历列表失败:', error)
@@ -299,10 +300,10 @@ export const usePositionStore = defineStore('position', () => {
       const data = await res.json()
       
       if (data.success) {
-        if (!resumes.value[positionId]) {
-          resumes.value[positionId] = []
+        if (!matches.value[positionId]) {
+          matches.value[positionId] = []
         }
-        resumes.value[positionId].push(data.data)
+        matches.value[positionId].push(data.data)
         return true
       }
       return false
@@ -320,13 +321,6 @@ export const usePositionStore = defineStore('position', () => {
       const data = await res.json()
       
       if (data.success) {
-        for (const posId in resumes.value) {
-          const index = resumes.value[posId].findIndex(r => r.id === resumeId)
-          if (index > -1) {
-            resumes.value[posId].splice(index, 1)
-            break
-          }
-        }
         if (currentPositionId.value) {
           await fetchResumes(currentPositionId.value)
         }
@@ -339,12 +333,32 @@ export const usePositionStore = defineStore('position', () => {
     }
   }
 
+  async function updateMatchStatus(matchId, status) {
+    try {
+      const res = await fetch(`${API_BASE}/position-resumes/${matchId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      })
+      const data = await res.json()
+      
+      if (data.success && currentPositionId.value) {
+        await fetchResumes(currentPositionId.value)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('更新匹配状态失败:', error)
+      return false
+    }
+  }
+
   function getCurrentPosition() {
     return positions.value.find(p => p.id === currentPositionId.value)
   }
 
   function getPositionResumes(positionId) {
-    return resumes.value[positionId] || []
+    return matches.value[positionId] || []
   }
 
   return {
@@ -353,6 +367,7 @@ export const usePositionStore = defineStore('position', () => {
     archivedPositions,
     currentPositionId,
     resumes,
+    matches,
     positionNotes,
     fetchPositions,
     archivePosition,
@@ -369,6 +384,7 @@ export const usePositionStore = defineStore('position', () => {
     fetchResumeDetail,
     addResume,
     deleteResume,
+    updateMatchStatus,
     getCurrentPosition,
     getPositionResumes
   }

@@ -1,6 +1,6 @@
 const express = require('express')
 const cors = require('cors')
-const { initDatabase, positionStmt, positionNoteStmt, resumeStmt, aiConfigStmt, companyStmt } = require('./database')
+const { initDatabase, positionStmt, positionResumeStmt, resumeStmt, aiConfigStmt, companyStmt, positionNoteStmt } = require('./database')
 const path = require('path')
 const fs = require('fs')
 const busboy = require('busboy')
@@ -156,7 +156,6 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
       })
 
       const insertResult = resumeStmt.insert(
-        String(positionId),
         String(recordFileName),
         String(size),
         String(type || ''),
@@ -174,14 +173,30 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         result.structuredData?.model || ''
       )
 
+      const matchResult = positionResumeStmt.insert(insertResult.lastInsertRowid, positionId)
+
       setTimeout(() => {
-        runEvaluation(insertResult.lastInsertRowid, positionId, result.content, parsedData)
+        runEvaluation(matchResult.lastInsertRowid, insertResult.lastInsertRowid, positionId, result.content, parsedData)
       }, 100)
 
-      const newResume = resumeStmt.getById(insertResult.lastInsertRowid)
-      console.log('数据库存储结果:', newResume)
+      const newMatch = positionResumeStmt.getById(matchResult.lastInsertRowid)
+      console.log('数据库存储结果:', newMatch)
 
-      res.json({ success: true, data: newResume })
+      let parsedDataObj = null
+      if (newMatch.parsed_data) {
+        try {
+          parsedDataObj = JSON.parse(newMatch.parsed_data)
+        } catch (e) {
+          console.warn('解析 parsed_data 失败:', e)
+        }
+      }
+
+      const responseData = {
+        ...newMatch,
+        parsed_data_obj: parsedDataObj
+      }
+
+      res.json({ success: true, data: responseData })
     } catch (error) {
       console.error('上传简历失败:', error)
       res.status(500).json({ success: false, message: error.message })
@@ -203,13 +218,18 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
       return res.status(404).json({ success: false, message: '文件不存在' })
     }
     
+    const positionId = req.query.positionId
+    if (!positionId) {
+      return res.status(400).json({ success: false, message: '缺少职位ID' })
+    }
+    
     console.log('\n========== 重新解析简历 ==========')
     console.log('简历ID:', req.params.id)
     console.log('文件名:', resume.name)
     console.log('文件路径:', resume.file_path)
-    console.log('职位ID:', resume.position_id)
+    console.log('职位ID:', positionId)
     
-    const result = await parserFactory.parse(resume.file_path, resume.name, resume.position_id)
+    const result = await parserFactory.parse(resume.file_path, resume.name, positionId)
     
     console.log('\n========== 解析结果 ==========')
     console.log('候选人姓名:', result.candidateName)
@@ -239,8 +259,14 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
       result.structuredData?.model || ''
     )
 
+    let match = positionResumeStmt.getByResumeAndPosition(req.params.id, positionId)
+    if (!match) {
+      const insertResult = positionResumeStmt.insert(req.params.id, positionId)
+      match = positionResumeStmt.getById(insertResult.lastInsertRowid)
+    }
+
     setTimeout(() => {
-      runEvaluation(req.params.id, resume.position_id, result.content, parsedData)
+      runEvaluation(match.id, req.params.id, positionId, result.content, parsedData)
     }, 100)
 
     const updatedResume = resumeStmt.getById(req.params.id)
@@ -251,9 +277,10 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
   }
 })
 
-async function runEvaluation(resumeId, positionId, resumeContent, parsedDataStr) {
+async function runEvaluation(matchId, resumeId, positionId, resumeContent, parsedDataStr) {
   try {
     console.log('\n========== 开始评估简历 ==========')
+    console.log('匹配ID:', matchId)
     console.log('简历ID:', resumeId)
     
     const position = positionStmt.getById(positionId)
@@ -274,16 +301,13 @@ async function runEvaluation(resumeId, positionId, resumeContent, parsedDataStr)
     let combinedResult = {}
     try {
       const parsedData = JSON.parse(parsedDataStr)
-      console.log("🚀 ~ runEvaluation ~ parsedData:", parsedData)
       
-      // 获取职位补充信息
       const positionNotes = positionNoteStmt.getByPosition(positionId)
       const notesText = positionNotes.length > 0 
         ? '\n\n职位补充要求：\n' + positionNotes.map(n => `• ${n.content}`).join('\n')
         : ''
       
       const jdText = (position.description || '') + notesText
-      console.log("🚀 ~ runEvaluation ~ jdText:", jdText)
       
       const result = await aiService.evaluateAndGenerateQuestions(parsedData, jdText)
       if (result && typeof result === 'object') {
@@ -305,7 +329,7 @@ async function runEvaluation(resumeId, positionId, resumeContent, parsedDataStr)
       match_level: matchLevel
     })
 
-    resumeStmt.updateAllEvaluation(resumeId, evaluationJson, matchScore, questionsJson)
+    positionResumeStmt.updateEvaluation(matchId, evaluationJson, matchScore, questionsJson)
 
     console.log('评估完成 - 匹配度:', matchScore, '问题数:', (combinedResult.questions || []).length)
     console.log('================================\n')
@@ -314,23 +338,31 @@ async function runEvaluation(resumeId, positionId, resumeContent, parsedDataStr)
   }
 }
 
-app.post('/api/resumes/:id/evaluate', async (req, res) => {
+app.post('/api/positions/:positionId/resumes/:resumeId/evaluate', async (req, res) => {
   try {
-    const resume = resumeStmt.getById(req.params.id)
+    const { positionId, resumeId } = req.params
+    
+    const position = positionStmt.getById(positionId)
+    if (!position) {
+      return res.status(404).json({ success: false, message: '职位不存在' })
+    }
+    
+    const resume = resumeStmt.getById(resumeId)
     if (!resume) {
       return res.status(404).json({ success: false, message: '简历不存在' })
     }
     
-    const position = positionStmt.getById(resume.position_id)
-    if (!position) {
-      return res.status(404).json({ success: false, message: '职位不存在' })
+    let match = positionResumeStmt.getByResumeAndPosition(resumeId, positionId)
+    if (!match) {
+      const insertResult = positionResumeStmt.insert(resumeId, positionId)
+      match = positionResumeStmt.getById(insertResult.lastInsertRowid)
     }
 
     setTimeout(() => {
-      runEvaluation(req.params.id, resume.position_id, resume.content, resume.parsed_data || '{}')
+      runEvaluation(match.id, resumeId, positionId, resume.content, resume.parsed_data || '{}')
     }, 100)
 
-    res.json({ success: true, message: '评估已开始，请稍后刷新查看结果' })
+    res.json({ success: true, message: '评估已开始，请稍后刷新查看结果', data: { matchId: match.id } })
   } catch (error) {
     console.error('评估失败:', error)
     res.status(500).json({ success: false, message: error.message })
@@ -597,8 +629,43 @@ app.get('/api/resumes/:id', (req, res) => {
 
 app.get('/api/positions/:positionId/resumes', (req, res) => {
   try {
-    const resumes = resumeStmt.getByPosition(req.params.positionId)
-    res.json({ success: true, data: resumes })
+    const matches = positionResumeStmt.getByPosition(req.params.positionId)
+    const data = matches.map(match => {
+      let parsedDataObj = null
+      if (match.parsed_data) {
+        try {
+          parsedDataObj = JSON.parse(match.parsed_data)
+        } catch (e) {
+          console.warn('解析 parsed_data 失败:', e)
+        }
+      }
+      
+      let evaluationObj = null
+      if (match.evaluation) {
+        try {
+          evaluationObj = JSON.parse(match.evaluation)
+        } catch (e) {
+          console.warn('解析 evaluation 失败:', e)
+        }
+      }
+      
+      let questionsList = []
+      if (match.questions) {
+        try {
+          questionsList = JSON.parse(match.questions)
+        } catch (e) {
+          console.warn('解析 questions 失败:', e)
+        }
+      }
+
+      return {
+        ...match,
+        parsed_data_obj: parsedDataObj,
+        evaluation_obj: evaluationObj,
+        questions_list: questionsList
+      }
+    })
+    res.json({ success: true, data })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -770,6 +837,26 @@ app.post('/api/ai-configs/:id/test', (req, res) => {
     res.json(result)
   } catch (error) {
     console.error('测试AI配置失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+app.put('/api/position-resumes/:id/status', (req, res) => {
+  try {
+    const { status } = req.body
+    if (!status) {
+      return res.status(400).json({ success: false, message: '状态不能为空' })
+    }
+    
+    const result = positionResumeStmt.updateStatus(req.params.id, status)
+    if (result.changes) {
+      const match = positionResumeStmt.getById(req.params.id)
+      res.json({ success: true, data: match })
+    } else {
+      res.status(404).json({ success: false, message: '匹配记录不存在' })
+    }
+  } catch (error) {
+    console.error('更新状态失败:', error)
     res.status(500).json({ success: false, message: error.message })
   }
 })

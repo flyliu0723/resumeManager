@@ -70,12 +70,12 @@ async function initDatabase() {
     console.log('创建 companies 表')
   }
   
+   // 简历表（存储简历文件信息，与职位解耦）
   const resumeTableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='resumes'")
   if (resumeTableCheck.length === 0) {
     db.run(`
       CREATE TABLE resumes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        position_id INTEGER NOT NULL,
         name TEXT NOT NULL,
         size TEXT,
         type TEXT,
@@ -86,48 +86,31 @@ async function initDatabase() {
         parsed_at DATETIME,
         parser TEXT,
         model TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (position_id) REFERENCES positions(id)
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
     console.log('创建 resumes 表')
-  } else {
-    // 检查是否需要添加新字段
-    const columnCheck = db.exec("PRAGMA table_info(resumes)")
-    const columns = columnCheck.length > 0 ? columnCheck[0].values.map(row => row[1]) : []
-    
-    if (!columns.includes('parsed_data')) {
-      db.run('ALTER TABLE resumes ADD COLUMN parsed_data TEXT')
-      console.log('添加 parsed_data 字段')
-    }
-    if (!columns.includes('parsed_at')) {
-      db.run('ALTER TABLE resumes ADD COLUMN parsed_at DATETIME')
-      console.log('添加 parsed_at 字段')
-    }
-    if (!columns.includes('parser')) {
-      db.run('ALTER TABLE resumes ADD COLUMN parser TEXT')
-      console.log('添加 parser 字段')
-    }
-    if (!columns.includes('model')) {
-      db.run('ALTER TABLE resumes ADD COLUMN model TEXT')
-      console.log('添加 model 字段')
-    }
-    if (!columns.includes('evaluation')) {
-      db.run('ALTER TABLE resumes ADD COLUMN evaluation TEXT')
-      console.log('添加 evaluation 字段')
-    }
-    if (!columns.includes('status')) {
-      db.run('ALTER TABLE resumes ADD COLUMN status TEXT DEFAULT "未解析"')
-      console.log('添加 status 字段')
-    }
-    if (!columns.includes('match_score')) {
-      db.run('ALTER TABLE resumes ADD COLUMN match_score INTEGER')
-      console.log('添加 match_score 字段')
-    }
-    if (!columns.includes('questions')) {
-      db.run('ALTER TABLE resumes ADD COLUMN questions TEXT')
-      console.log('添加 questions 字段')
-    }
+  }
+
+  // 简历-职位匹配表（一个简历可匹配多个职位）
+  const positionResumeTableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='position_resumes'")
+  if (positionResumeTableCheck.length === 0) {
+    db.run(`
+      CREATE TABLE position_resumes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        resume_id INTEGER NOT NULL,
+        position_id INTEGER NOT NULL,
+        evaluation TEXT,
+        match_score INTEGER,
+        questions TEXT,
+        status TEXT DEFAULT '待沟通',
+        matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (resume_id) REFERENCES resumes(id),
+        FOREIGN KEY (position_id) REFERENCES positions(id),
+        UNIQUE(resume_id, position_id)
+      )
+    `)
+    console.log('创建 position_resumes 表')
   }
 
   // 职位补充信息表
@@ -281,59 +264,72 @@ const positionNoteStmt = {
 }
 
 const resumeStmt = {
-  insert: (position_id, name, size, type, file_path, candidate_name, content) => {
-    console.log('\n========== 数据库插入参数 ==========')
-    console.log('position_id:', position_id, 'type:', typeof position_id)
-    console.log('name:', name, 'type:', typeof name)
-    console.log('size:', size, 'type:', typeof size)
-    console.log('type:', type, 'type:', typeof type)
-    console.log('file_path:', file_path, 'type:', typeof file_path)
-    console.log('candidate_name:', candidate_name, 'type:', typeof candidate_name)
-    console.log('content:', content?.substring(0, 100), 'type:', typeof content)
-    console.log('====================================\n')
+  insert: (name, size, type, file_path, candidate_name, content) => {
+    console.log('\n========== 数据库插入简历 ==========')
+    console.log('name:', name)
+    console.log('size:', size)
+    console.log('type:', type)
+    console.log('file_path:', file_path)
+    console.log('candidate_name:', candidate_name)
     
-    const result = db.run('INSERT INTO resumes (position_id, name, size, type, file_path, candidate_name, content, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-      [String(position_id), String(name), String(size), String(type), String(file_path), String(candidate_name), String(content || ''), '未解析'])
+    const result = db.run('INSERT INTO resumes (name, size, type, file_path, candidate_name, content) VALUES (?, ?, ?, ?, ?, ?)', 
+      [String(name), String(size), String(type), String(file_path), String(candidate_name), String(content || '')])
     
     let lastId = lastInsertRowid()
     console.log('lastInsertRowid:', lastId)
-    
     saveDatabase()
     console.log('==========================================\n')
     
     return { lastInsertRowid: lastId }
   },
   updateContent: (id, candidate_name, content) => run('UPDATE resumes SET candidate_name = ?, content = ? WHERE id = ?', [candidate_name, content, Number(id)]),
-  updateParsedData: (id, parsed_data, candidate_name, content, parser, model, evaluation) => {
-    const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, status = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
-    run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), '已解析', Number(id)])
-    if (evaluation) {
-      run('UPDATE resumes SET evaluation = ? WHERE id = ?', [String(evaluation), Number(id)])
-    }
-  },
-  updateStatus: (id, status) => run('UPDATE resumes SET status = ? WHERE id = ?', [String(status), Number(id)]),
-  updateEvaluation: (id, evaluation, match_score = null, questions = null) => {
-    let sql = 'UPDATE resumes SET evaluation = ?'
-    const params = [String(evaluation)]
-    if (match_score !== null) {
-      sql += ', match_score = ?'
-      params.push(Number(match_score))
-    }
-    if (questions !== null) {
-      sql += ', questions = ?'
-      params.push(String(questions))
-    }
-    sql += ' WHERE id = ?'
-    params.push(Number(id))
-    run(sql, params)
-  },
-  updateAllEvaluation: (id, evaluation, match_score, questions) => {
-    const sql = 'UPDATE resumes SET evaluation = ?, match_score = ?, questions = ?, status = ? WHERE id = ?'
-    run(sql, [String(evaluation), Number(match_score), String(questions), '待沟通', Number(id)])
+  updateParsedData: (id, parsed_data, candidate_name, content, parser, model) => {
+    const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
+    run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), Number(id)])
   },
   delete: (id) => run('DELETE FROM resumes WHERE id = ?', [Number(id)]),
-  getByPosition: (position_id) => all('SELECT * FROM resumes WHERE position_id = ? ORDER BY created_at DESC', [Number(position_id)]),
-  getById: (id) => get('SELECT * FROM resumes WHERE id = ?', [Number(id)])
+  getById: (id) => get('SELECT * FROM resumes WHERE id = ?', [Number(id)]),
+  getAll: () => all('SELECT * FROM resumes ORDER BY created_at DESC')
+}
+
+const positionResumeStmt = {
+  insert: (resumeId, positionId) => {
+    const result = db.run('INSERT OR IGNORE INTO position_resumes (resume_id, position_id) VALUES (?, ?)', [Number(resumeId), Number(positionId)])
+    let lastId = lastInsertRowid()
+    if (lastId === null) {
+      const existing = db.prepare('SELECT id FROM position_resumes WHERE resume_id = ? AND position_id = ?').bind([Number(resumeId), Number(positionId)])
+      if (existing.step()) {
+        lastId = existing.getAsObject().id
+      }
+      existing.free()
+    }
+    saveDatabase()
+    return { lastInsertRowid: lastId }
+  },
+  getByPosition: (positionId) => {
+    return all(`
+      SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type
+      FROM position_resumes pr
+      JOIN resumes r ON pr.resume_id = r.id
+      WHERE pr.position_id = ?
+      ORDER BY pr.matched_at DESC
+    `, [Number(positionId)])
+  },
+  getById: (id) => {
+    return get(`
+      SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type
+      FROM position_resumes pr
+      JOIN resumes r ON pr.resume_id = r.id
+      WHERE pr.id = ?
+    `, [Number(id)])
+  },
+  updateEvaluation: (id, evaluation, match_score, questions) => {
+    const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
+    run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
+  },
+  updateStatus: (id, status) => run('UPDATE position_resumes SET status = ? WHERE id = ?', [String(status), Number(id)]),
+  delete: (id) => run('DELETE FROM position_resumes WHERE id = ?', [Number(id)]),
+  getByResumeAndPosition: (resumeId, positionId) => get('SELECT * FROM position_resumes WHERE resume_id = ? AND position_id = ?', [Number(resumeId), Number(positionId)])
 }
 
 const aiConfigStmt = {
@@ -417,5 +413,6 @@ module.exports = {
   companyStmt,
   positionNoteStmt,
   resumeStmt,
+  positionResumeStmt,
   aiConfigStmt
 }
