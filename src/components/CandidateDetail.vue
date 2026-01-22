@@ -70,6 +70,38 @@
           <p class="summary-text">{{ evaluationData.ai_summary }}</p>
         </div>
 
+        <div class="analysis-cards" v-if="matchReasons.length > 0 || gapAnalysis.length > 0 || uncertainPoints.length > 0">
+          <div class="analysis-card match-card" v-if="matchReasons.length > 0">
+            <div class="card-header">
+              <el-icon><CircleCheck /></el-icon>
+              <span>明显匹配点</span>
+            </div>
+            <ul class="card-list">
+              <li v-for="(reason, index) in matchReasons" :key="index">{{ reason }}</li>
+            </ul>
+          </div>
+
+          <div class="analysis-card risk-card" v-if="gapAnalysis.length > 0">
+            <div class="card-header">
+              <el-icon><WarningFilled /></el-icon>
+              <span>明显风险点</span>
+            </div>
+            <ul class="card-list">
+              <li v-for="(gap, index) in gapAnalysis" :key="index">{{ gap }}</li>
+            </ul>
+          </div>
+
+          <div class="analysis-card uncertain-card" v-if="uncertainPoints.length > 0">
+            <div class="card-header">
+              <el-icon><QuestionFilled /></el-icon>
+              <span>不确定点</span>
+            </div>
+            <ul class="card-list">
+              <li v-for="(point, index) in uncertainPoints" :key="index">{{ point }}</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="questions-section" v-if="questionsList.length > 0">
           <div class="section-title">
             <el-icon><ChatDotRound /></el-icon>
@@ -180,7 +212,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ChatDotRound, Document, Refresh, TrendCharts, Calendar, Warning } from '@element-plus/icons-vue'
+import { ChatDotRound, Document, Refresh, TrendCharts, Calendar, Warning, CircleCheck, WarningFilled, QuestionFilled } from '@element-plus/icons-vue'
 
 const props = defineProps({
   candidate: {
@@ -235,6 +267,21 @@ const evaluationData = computed(() => {
 const questionsList = computed(() => {
   if (!props.candidate) return []
   return props.candidate.questions_list || []
+})
+
+const matchReasons = computed(() => {
+  if (!props.candidate) return []
+  return evaluationData.value.match_reasons || []
+})
+
+const gapAnalysis = computed(() => {
+  if (!props.candidate) return []
+  return evaluationData.value.gap_analysis || []
+})
+
+const uncertainPoints = computed(() => {
+  if (!props.candidate) return []
+  return evaluationData.value.uncertain || []
 })
 
 const hasParsedData = computed(() => {
@@ -505,6 +552,69 @@ const getExperienceText = (candidate) => {
   font-size: 13px;
   color: #303133;
   line-height: 1.6;
+}
+
+.analysis-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.analysis-card {
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.analysis-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.analysis-card .card-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.analysis-card .card-list li {
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 4px;
+}
+
+.analysis-card .card-list li:last-child {
+  margin-bottom: 0;
+}
+
+.match-card {
+  background: #f0f9eb;
+  border: 1px solid #e1f3d8;
+}
+
+.match-card .card-header {
+  color: #67c23a;
+}
+
+.risk-card {
+  background: #fef0f0;
+  border: 1px solid #fde2e2;
+}
+
+.risk-card .card-header {
+  color: #f56c6c;
+}
+
+.uncertain-card {
+  background: #fdf6ec;
+  border: 1px solid #faecd8;
+}
+
+.uncertain-card .card-header {
+  color: #e6a23c;
 }
 
 .questions-section {
