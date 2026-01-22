@@ -22,37 +22,98 @@
     </div>
 
     <div v-else class="candidate-items">
-      <div
-        v-for="candidate in candidates"
-        :key="candidate.id"
-        :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
-        @click="selectCandidate(candidate)"
-      >
-        <div class="candidate-avatar">{{ getAvatarText(getCandidateName(candidate)) }}</div>
-        <div class="candidate-info">
-          <div class="candidate-name">
-            {{ getCandidateName(candidate) || '未知候选人' }}
+      <el-collapse v-model="activeNames" class="status-groups">
+        <el-collapse-item name="pending" class="status-group pending-group">
+          <template #title>
+            <div class="group-header">
+              <span class="group-title">
+                <el-icon><Clock /></el-icon>
+                流程中 ({{ pendingCandidates.length }})
+              </span>
+            </div>
+          </template>
+          <div class="candidate-list">
+            <div
+              v-for="candidate in pendingCandidates"
+              :key="candidate.id"
+              :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
+              @click="selectCandidate(candidate)"
+            >
+              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.status) }">
+                {{ getAvatarText(getCandidateName(candidate)) }}
+              </div>
+              <div class="candidate-info">
+                <div class="candidate-name">
+                  {{ getCandidateName(candidate) || '未知候选人' }}
+                </div>
+                <div class="candidate-experience">
+                  {{ getExperienceText(candidate) }}
+                </div>
+                <div class="candidate-meta">
+                  <span :class="['match-score', getMatchLevel(candidate.match_score)]">
+                    {{ candidate.match_score || 0 }}%
+                  </span>
+                  <el-tag :type="getStatusType(candidate.status)" size="small" class="status-tag">
+                    {{ getStatusText(candidate.status) }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+            <div v-if="pendingCandidates.length === 0" class="empty-group">
+              暂无流程中候选人
+            </div>
           </div>
-          <div class="candidate-experience">
-            {{ getExperienceText(candidate) }}
+        </el-collapse-item>
+
+        <el-collapse-item name="finished" class="status-group finished-group">
+          <template #title>
+            <div class="group-header">
+              <span class="group-title">
+                <el-icon><CircleCheck /></el-icon>
+                已结束 ({{ finishedCandidates.length }})
+              </span>
+            </div>
+          </template>
+          <div class="candidate-list">
+            <div
+              v-for="candidate in finishedCandidates"
+              :key="candidate.id"
+              :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
+              @click="selectCandidate(candidate)"
+            >
+              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.status) }">
+                {{ getAvatarText(getCandidateName(candidate)) }}
+              </div>
+              <div class="candidate-info">
+                <div class="candidate-name">
+                  {{ getCandidateName(candidate) || '未知候选人' }}
+                </div>
+                <div class="candidate-experience">
+                  {{ getExperienceText(candidate) }}
+                </div>
+                <div class="candidate-meta">
+                  <span :class="['match-score', getMatchLevel(candidate.match_score)]">
+                    {{ candidate.match_score || 0 }}%
+                  </span>
+                  <el-tag :type="getStatusType(candidate.status)" size="small" class="status-tag">
+                    {{ getStatusText(candidate.status) }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+            <div v-if="finishedCandidates.length === 0" class="empty-group">
+              暂无已结束候选人
+            </div>
           </div>
-          <div class="candidate-meta">
-            <span :class="['match-score', getMatchLevel(candidate.match_score)]">
-              {{ candidate.match_score || 0 }}%
-            </span>
-            <el-tag :type="getStatusType(candidate.status)" size="small" class="status-tag">
-              {{ getStatusText(candidate.status) }}
-            </el-tag>
-          </div>
-        </div>
-      </div>
+        </el-collapse-item>
+      </el-collapse>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { Plus, Document } from '@element-plus/icons-vue'
+import { ref, computed } from 'vue'
+import { Plus, Document, Clock, CircleCheck } from '@element-plus/icons-vue'
 
 const props = defineProps({
   candidates: {
@@ -67,9 +128,35 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'upload', 'view-jd'])
 
+const activeNames = ref(['pending', 'finished'])
+
+const pendingStatuses = ['待沟通', '待面试', '面试中', '已解析', '未解析']
+const finishedStatuses = ['已通过', '已拒绝']
+
+const pendingCandidates = computed(() => {
+  return props.candidates.filter(c => pendingStatuses.includes(c.status))
+})
+
+const finishedCandidates = computed(() => {
+  return props.candidates.filter(c => finishedStatuses.includes(c.status))
+})
+
 const getAvatarText = (name) => {
   if (!name) return '?'
   return name.charAt(0).toUpperCase()
+}
+
+const getAvatarColor = (status) => {
+  const colors = {
+    '待沟通': 'linear-gradient(135deg, #e6a23c 0%, #f5a623 100%)',
+    '待面试': 'linear-gradient(135deg, #409eff 0%, #67c4ff 100%)',
+    '面试中': 'linear-gradient(135deg, #67c23a 0%, #85ce61 100%)',
+    '已通过': 'linear-gradient(135deg, #67c23a 0%, #95d475 100%)',
+    '已拒绝': 'linear-gradient(135deg, #f56c6c 0%, #f89898 100%)',
+    '未解析': 'linear-gradient(135deg, #909399 0%, #b4b4b8 100%)',
+    '已解析': 'linear-gradient(135deg, #409eff 0%, #79bbff 100%)'
+  }
+  return colors[status] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
 }
 
 const getCandidateName = (candidate) => {
@@ -79,17 +166,9 @@ const getCandidateName = (candidate) => {
 const getExperienceText = (candidate) => {
   const pd = candidate.parsed_data_obj || candidate.parsed_data || {}
   const experiences = []
-  if (pd.latest_title) {
-    experiences.push(pd.latest_title)
-  }
-  if (pd.latest_company) {
-    experiences.push(pd.latest_company)
-  }
-  if (pd.years_experience) {
-    experiences.push(`${pd.years_experience}年`)
-  } else if (candidate.years_experience) {
-    experiences.push(`${candidate.years_experience}年`)
-  }
+  if (pd.latest_title) experiences.push(pd.latest_title)
+  if (pd.latest_company) experiences.push(pd.latest_company)
+  if (pd.years_experience) experiences.push(`${pd.years_experience}年`)
   return experiences.join(' · ') || '暂无经历'
 }
 
@@ -145,6 +224,7 @@ const selectCandidate = (candidate) => {
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
 }
 
 .list-title {
@@ -191,6 +271,64 @@ const selectCandidate = (candidate) => {
   padding: 8px;
 }
 
+.status-groups {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-group {
+  border-bottom: none !important;
+}
+
+.status-group :deep(.el-collapse-item__header) {
+  border-bottom: none;
+  background: transparent;
+  height: auto;
+  padding: 12px 8px 8px;
+  font-size: 13px;
+}
+
+.status-group :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+  background: transparent;
+}
+
+.status-group :deep(.el-collapse-item__content) {
+  padding-bottom: 8px;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.group-title .el-icon {
+  font-size: 14px;
+}
+
+.pending-group :deep(.el-collapse-item__header) {
+  color: #409eff;
+}
+
+.finished-group :deep(.el-collapse-item__header) {
+  color: #909399;
+}
+
+.candidate-list {
+  padding: 0 4px;
+}
+
 .candidate-item {
   display: flex;
   align-items: flex-start;
@@ -216,7 +354,6 @@ const selectCandidate = (candidate) => {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -282,5 +419,12 @@ const selectCandidate = (candidate) => {
 
 .status-tag {
   font-size: 11px;
+}
+
+.empty-group {
+  padding: 20px;
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

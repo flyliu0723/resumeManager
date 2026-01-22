@@ -6,7 +6,7 @@ async function test() {
       const req = http.request({
         hostname: 'localhost',
         port: 3000,
-        path: '/api/positions/17/resumes',
+        path: '/api/positions',
         method: 'GET'
       }, (res) => {
         let data = ''

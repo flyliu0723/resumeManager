@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "dev": "node hot-reload.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,5 +20,8 @@
     "pdf-parse": "^1.1.4",
     "pdfjs-dist": "^5.4.530",
     "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "node-dev": "^8.0.0"
   }
 }

@@ -24,6 +24,8 @@
         :evaluating="evaluating"
         :position-archived="currentPosition?.status === 'archived'"
         :position-archive-reason="currentPosition?.archive_reason || ''"
+        :position-id="currentPosition?.id"
+        :position-name="currentPosition?.name"
         @view-jd="openJD"
         @parse="handleParse"
         @evaluate="handleEvaluate"
@@ -131,7 +133,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PositionNav from '../components/PositionNav.vue'
 import CandidateList from '../components/CandidateList.vue'
@@ -141,6 +143,11 @@ import { api } from '../utils/api'
 import { Calendar, UploadFilled, Plus, Edit, Check, Delete } from '@element-plus/icons-vue'
 
 const store = usePositionStore()
+
+onMounted(() => {
+  store.fetchPositions()
+})
+
 const currentPosition = computed(() => store.getCurrentPosition())
 const currentCandidates = computed(() => store.getPositionResumes(store.currentPositionId))
 

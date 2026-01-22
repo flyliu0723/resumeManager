@@ -250,6 +250,65 @@ export const usePositionStore = defineStore('position', () => {
     }
   }
 
+  const flowLogs = ref({})
+
+  async function fetchFlowLogs(matchId) {
+    try {
+      const logs = await api.get(`/flow-logs/match/${matchId}/flow-logs`)
+      flowLogs.value[matchId] = logs || []
+      return logs
+    } catch (error) {
+      console.error('获取流程日志失败:', error)
+      return []
+    }
+  }
+
+  async function createFlowLog(matchId, fromStatus, toStatus, note, jdSupplement) {
+    try {
+      const result = await api.post('/flow-logs/match/flow-log', {
+        matchId,
+        fromStatus,
+        toStatus,
+        note,
+        jdSupplement
+      })
+      
+      if (result.match) {
+        if (currentPositionId.value) {
+          await fetchResumes(currentPositionId.value)
+        }
+      }
+      
+      if (result.logs) {
+        flowLogs.value[matchId] = result.logs
+      } else {
+        await fetchFlowLogs(matchId)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('创建流程日志失败:', error)
+      return null
+    }
+  }
+
+  async function updateJdSupplement(matchId, jdSupplement) {
+    try {
+      await api.put(`/flow-logs/match/${matchId}/jd-supplement`, { jdSupplement })
+      if (currentPositionId.value) {
+        await fetchResumes(currentPositionId.value)
+      }
+      return true
+    } catch (error) {
+      console.error('更新JD补充失败:', error)
+      return false
+    }
+  }
+
+  function getFlowLogs(matchId) {
+    return flowLogs.value[matchId] || []
+  }
+
   function getCurrentPosition() {
     return positions.value.find(p => p.id === currentPositionId.value)
   }
@@ -266,6 +325,7 @@ export const usePositionStore = defineStore('position', () => {
     resumes,
     matches,
     positionNotes,
+    flowLogs,
     fetchPositions,
     archivePosition,
     restorePosition,
@@ -282,6 +342,10 @@ export const usePositionStore = defineStore('position', () => {
     addResume,
     deleteResume,
     updateMatchStatus,
+    fetchFlowLogs,
+    createFlowLog,
+    updateJdSupplement,
+    getFlowLogs,
     getCurrentPosition,
     getPositionResumes
   }

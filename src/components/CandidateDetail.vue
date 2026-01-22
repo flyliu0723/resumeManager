@@ -6,31 +6,45 @@
 
     <template v-else>
       <div class="detail-header">
-          <div class="header-top">
-            <div class="candidate-avatar-lg">{{ getAvatarText(parsedData.name || candidate?.candidate_name) }}</div>
-            <div class="header-info">
-              <h3>{{ parsedData.name || candidate?.candidate_name || '未知候选人' }}</h3>
+        <div class="header-top">
+          <div class="candidate-avatar-lg" :style="{ background: getAvatarColor(candidate.current_status || candidate.status) }">
+            {{ getAvatarText(parsedData.name || candidate?.candidate_name) }}
+          </div>
+          <div class="header-info">
+            <h3>{{ parsedData.name || candidate?.candidate_name || '未知候选人' }}</h3>
             <div class="subtitle-row">
               <span class="subtitle">{{ getExperienceText(candidate) }}</span>
-              <el-tag :type="getStatusType(candidate.status)" size="small">{{ getStatusText(candidate.status) }}</el-tag>
+              <el-tag :type="getStatusType(candidate.current_status || candidate.status)" size="small">
+                {{ getStatusText(candidate.current_status || candidate.status) }}
+              </el-tag>
             </div>
           </div>
-          <el-button class="view-jd-btn" @click="viewOriginal" :disabled="positionArchived">
-            <el-icon><Document /></el-icon>
-            查看简历
-          </el-button>
-          <el-button type="primary" @click="$emit('parse')" :loading="parsing" :disabled="positionArchived">
-            <el-icon><Refresh /></el-icon>
-            重新解析
-          </el-button>
-          <el-button type="warning" @click="$emit('evaluate')" :loading="evaluating" :disabled="positionArchived || !hasParsedData">
-            <el-icon><TrendCharts /></el-icon>
-            重新匹配
-          </el-button>
-          <el-button type="success" @click="$emit('schedule')" :disabled="positionArchived">
-            <el-icon><Calendar /></el-icon>
-            面试安排
-          </el-button>
+          <div class="header-actions">
+            <el-button @click="viewOriginal" :disabled="positionArchived">
+              <el-icon><Document /></el-icon>
+              查看简历
+            </el-button>
+            <el-button type="primary" @click="$emit('parse')" :loading="parsing" :disabled="positionArchived">
+              <el-icon><Refresh /></el-icon>
+              重新解析
+            </el-button>
+            <el-button type="warning" @click="$emit('evaluate')" :loading="evaluating" :disabled="positionArchived || !hasParsedData">
+              <el-icon><TrendCharts /></el-icon>
+              重新匹配
+            </el-button>
+            <el-button type="primary" @click="showActionDialog" :disabled="positionArchived">
+              <el-icon><Operation /></el-icon>
+              状态变更
+            </el-button>
+            <el-button @click="showJdExtraDialog">
+              <el-icon><EditPen /></el-icon>
+              JD补充
+            </el-button>
+            <el-button @click="showFlowDetail">
+              <el-icon><List /></el-icon>
+              流转详情
+            </el-button>
+          </div>
         </div>
         <div v-if="positionArchived" class="archived-banner">
           <el-icon><Warning /></el-icon>
@@ -39,7 +53,7 @@
       </div>
 
       <div class="detail-content">
-        <div class="action-bar" v-if="candidate.status === '未解析' && !positionArchived">
+        <div class="action-bar" v-if="(candidate.status === '未解析' || candidate.current_status === '未解析') && !positionArchived">
           <el-alert
             title="该简历尚未解析"
             type="warning"
@@ -175,7 +189,6 @@
               <p v-else class="no-data-text">未提取到项目经历摘要</p>
             </div>
           </el-collapse-item>
-
         </el-collapse>
 
         <div v-if="positionArchiveReason" class="archive-reason-section">
@@ -188,53 +201,40 @@
       </div>
     </template>
 
-    <el-dialog
-      v-model="previewVisible"
-      :title="previewFile?.name || '简历预览'"
-      width="80%"
-      top="5vh"
-    >
-      <div class="preview-content">
-        <iframe 
-          v-if="previewFile && isPDF(previewFile)"
-          :src="`http://localhost:3000/api/resumes/${previewFile.id}/preview`"
-          class="preview-frame"
-        />
-        <div v-else class="word-tip">
-          <el-icon size="48"><Warning /></el-icon>
-          <p>Word 文档无法在线预览，请下载后查看</p>
-          <p class="file-info">文件名: {{ previewFile?.name }}</p>
-        </div>
-      </div>
-    </el-dialog>
+    <CandidateActionDialog
+      v-model="actionDialogVisible"
+      :candidate="candidate"
+      @success="handleActionSuccess"
+    />
+
+    <FlowDetailDialog
+      v-model="flowDetailVisible"
+      :candidate="candidate"
+    />
+
+    <JDExtraDialog
+      v-model="jdExtraDialogVisible"
+      :positionId="positionId"
+      :positionName="positionName"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
-import { ChatDotRound, Document, Refresh, TrendCharts, Calendar, Warning, CircleCheck, WarningFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { Document, Refresh, TrendCharts, Calendar, Warning, CircleCheck, WarningFilled, QuestionFilled, ChatDotRound, Operation, List, EditPen } from '@element-plus/icons-vue'
+import CandidateActionDialog from './CandidateActionDialog.vue'
+import FlowDetailDialog from './FlowDetailDialog.vue'
+import JDExtraDialog from './JDExtraDialog.vue'
 
 const props = defineProps({
-  candidate: {
-    type: Object,
-    default: null
-  },
-  parsing: {
-    type: Boolean,
-    default: false
-  },
-  evaluating: {
-    type: Boolean,
-    default: false
-  },
-  positionArchived: {
-    type: Boolean,
-    default: false
-  },
-  positionArchiveReason: {
-    type: String,
-    default: ''
-  }
+  candidate: Object,
+  parsing: Boolean,
+  evaluating: Boolean,
+  positionArchived: Boolean,
+  positionArchiveReason: String,
+  positionId: Number,
+  positionName: String
 })
 
 const emit = defineEmits(['view-jd', 'view-original', 'parse', 'evaluate', 'schedule'])
@@ -242,6 +242,9 @@ const emit = defineEmits(['view-jd', 'view-original', 'parse', 'evaluate', 'sche
 const activePanels = ref(['skills', 'experience', 'education', 'work', 'projects'])
 const previewVisible = ref(false)
 const previewFile = ref(null)
+const actionDialogVisible = ref(false)
+const flowDetailVisible = ref(false)
+const jdExtraDialogVisible = ref(false)
 
 const viewOriginal = () => {
   if (props.candidate) {
@@ -250,8 +253,20 @@ const viewOriginal = () => {
   }
 }
 
-const isPDF = (file) => {
-  return file.type === 'application/pdf' || file.name?.endsWith('.pdf')
+const showActionDialog = () => {
+  actionDialogVisible.value = true
+}
+
+const showFlowDetail = () => {
+  flowDetailVisible.value = true
+}
+
+const showJdExtraDialog = () => {
+  jdExtraDialogVisible.value = true
+}
+
+const handleActionSuccess = (result) => {
+  emit('success', result)
 }
 
 const parsedData = computed(() => {
@@ -288,6 +303,33 @@ const hasParsedData = computed(() => {
   if (!props.candidate) return false
   return props.candidate.parsed_data_obj && Object.keys(props.candidate.parsed_data_obj).length > 0
 })
+
+const getAvatarText = (name) => {
+  if (!name) return '?'
+  return name.charAt(0).toUpperCase()
+}
+
+const getAvatarColor = (status) => {
+  const colors = {
+    '待沟通': 'linear-gradient(135deg, #e6a23c 0%, #f5a623 100%)',
+    '待面试': 'linear-gradient(135deg, #409eff 0%, #67c4ff 100%)',
+    '面试中': 'linear-gradient(135deg, #67c23a 0%, #85ce61 100%)',
+    '已通过': 'linear-gradient(135deg, #67c23a 0%, #95d475 100%)',
+    '已拒绝': 'linear-gradient(135deg, #f56c6c 0%, #f89898 100%)',
+    '未解析': 'linear-gradient(135deg, #909399 0%, #b4b4b8 100%)',
+    '已解析': 'linear-gradient(135deg, #409eff 0%, #79bbff 100%)'
+  }
+  return colors[status] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+}
+
+const getExperienceText = (candidate) => {
+  const pd = parsedData.value
+  const experiences = []
+  if (pd.latest_title) experiences.push(pd.latest_title)
+  if (pd.latest_company) experiences.push(pd.latest_company)
+  if (pd.years_experience) experiences.push(`${pd.years_experience}年`)
+  return experiences.join(' · ') || '暂无经历'
+}
 
 const getMatchLevel = (score) => {
   if (!score && score !== 0) return '暂无'
@@ -328,40 +370,14 @@ const getStatusText = (status) => {
   }
   return texts[status] || status || '未知'
 }
-
-const getAvatarText = (name) => {
-  if (!name) return '?'
-  return name.charAt(0).toUpperCase()
-}
-
-const getExperienceText = (candidate) => {
-  const pd = parsedData.value
-  const experiences = []
-  if (pd.latest_title) {
-    experiences.push(pd.latest_title)
-  } else if (candidate?.latest_title) {
-    experiences.push(candidate.latest_title)
-  }
-  if (pd.latest_company) {
-    experiences.push(pd.latest_company)
-  } else if (candidate?.latest_company) {
-    experiences.push(candidate.latest_company)
-  }
-  if (pd.years_experience) {
-    experiences.push(`${pd.years_experience}年`)
-  } else if (candidate?.years_experience) {
-    experiences.push(`${candidate.years_experience}年`)
-  }
-  return experiences.join(' · ') || '暂无经历'
-}
 </script>
 
 <style scoped>
 .candidate-detail-container {
-  background: #fff;
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: #fff;
 }
 
 .empty-state {
@@ -372,36 +388,37 @@ const getExperienceText = (candidate) => {
 }
 
 .detail-header {
-  padding: 20px 24px;
+  padding: 20px 24px 16px;
   border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
 }
 
 .header-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
 .candidate-avatar-lg {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .header-info {
   flex: 1;
+  min-width: 0;
 }
 
 .header-info h3 {
-  margin: 0 0 4px;
+  margin: 0 0 8px;
   font-size: 18px;
   font-weight: 600;
   color: #303133;
@@ -410,23 +427,18 @@ const getExperienceText = (candidate) => {
 .subtitle-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .subtitle {
-  margin: 0;
   font-size: 13px;
   color: #909399;
 }
 
-.view-jd-btn {
-  font-size: 12px;
-}
-.el-button+.el-button {
-  margin-left: -10px;
-}
-.view-jd-btn .el-icon {
-  margin-right: 4px;
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .archived-banner {
@@ -434,16 +446,11 @@ const getExperienceText = (candidate) => {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   background: #fdf6ec;
-  border: 1px solid #faecd8;
   border-radius: 6px;
   color: #e6a23c;
   font-size: 13px;
-}
-
-.archived-banner .el-icon {
-  font-size: 16px;
 }
 
 .detail-content {
@@ -456,102 +463,89 @@ const getExperienceText = (candidate) => {
   margin-bottom: 20px;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  margin-top: 10px;
-}
-
 .match-score-section {
-  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
 }
 
 .match-score-card {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 16px 20px;
-  border-radius: 8px;
-  background: #fafafa;
-  border: 1px solid #e4e7ed;
+  text-align: center;
+  padding: 24px 48px;
+  border-radius: 12px;
+  min-width: 140px;
 }
 
 .match-score-card.match-high {
-  background: #f0f9eb;
-  border-color: #e1f3d8;
+  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
+  border: 1px solid #c2e7b0;
 }
 
 .match-score-card.match-medium {
-  background: #fdf6ec;
-  border-color: #faecd8;
+  background: linear-gradient(135deg, #fdf6ec 0%, #faecd8 100%);
+  border: 1px solid #f5dab1;
 }
 
 .match-score-card.match-low {
-  background: #fef0f0;
-  border-color: #fde2e2;
+  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
+  border: 1px solid #fbc4c4;
+}
+
+.match-score-card.match-none {
+  background: #f4f4f5;
+  border: 1px solid #dcdfe6;
 }
 
 .score-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #909399;
+  margin-bottom: 8px;
 }
 
 .score-value {
-  font-size: 32px;
+  font-size: 48px;
   font-weight: 700;
+  line-height: 1;
+  margin-bottom: 8px;
 }
 
-.match-high .score-value {
-  color: #67c23a;
-}
-
-.match-medium .score-value {
-  color: #e6a23c;
-}
-
-.match-low .score-value {
-  color: #f56c6c;
-}
+.match-high .score-value { color: #67c23a; }
+.match-medium .score-value { color: #e6a23c; }
+.match-low .score-value { color: #f56c6c; }
+.match-none .score-value { color: #909399; }
 
 .score-level {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
 }
 
-.match-high .score-level {
-  color: #67c23a;
-}
-
-.match-medium .score-level {
-  color: #e6a23c;
-}
-
-.match-low .score-level {
-  color: #f56c6c;
-}
+.match-high .score-level { color: #67c23a; }
+.match-medium .score-level { color: #e6a23c; }
+.match-low .score-level { color: #f56c6c; }
+.match-none .score-level { color: #909399; }
 
 .summary-section {
   background: #f0f9eb;
   border: 1px solid #e1f3d8;
-  border-radius: 6px;
-  padding: 12px 16px;
+  border-radius: 8px;
+  padding: 16px 20px;
   margin-bottom: 20px;
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #67c23a;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .summary-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: #303133;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 .analysis-cards {
@@ -563,14 +557,14 @@ const getExperienceText = (candidate) => {
 
 .analysis-card {
   border-radius: 8px;
-  padding: 14px 16px;
+  padding: 14px 18px;
 }
 
 .analysis-card .card-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   margin-bottom: 10px;
 }
@@ -582,12 +576,8 @@ const getExperienceText = (candidate) => {
 
 .analysis-card .card-list li {
   font-size: 13px;
-  line-height: 1.6;
-  margin-bottom: 4px;
-}
-
-.analysis-card .card-list li:last-child {
-  margin-bottom: 0;
+  line-height: 1.7;
+  margin-bottom: 6px;
 }
 
 .match-card {
@@ -595,187 +585,110 @@ const getExperienceText = (candidate) => {
   border: 1px solid #e1f3d8;
 }
 
-.match-card .card-header {
-  color: #67c23a;
-}
+.match-card .card-header { color: #67c23a; }
 
 .risk-card {
   background: #fef0f0;
   border: 1px solid #fde2e2;
 }
 
-.risk-card .card-header {
-  color: #f56c6c;
-}
+.risk-card .card-header { color: #f56c6c; }
 
 .uncertain-card {
   background: #fdf6ec;
   border: 1px solid #faecd8;
 }
 
-.uncertain-card .card-header {
-  color: #e6a23c;
-}
+.uncertain-card .card-header { color: #e6a23c; }
 
 .questions-section {
   margin-bottom: 20px;
 }
 
 .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: #303133;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin-bottom: 12px;
-}
-
-.no-questions {
-  padding: 16px 0;
-}
-
-.no-data-text {
-  color: #909399;
-  font-size: 13px;
 }
 
 .questions-list {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .question-item {
-  background: #fafafa;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  padding: 12px 14px;
-  margin-bottom: 8px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 14px 18px;
 }
 
 .question-text {
-  font-size: 13px;
+  font-size: 14px;
   color: #303133;
-  margin-bottom: 6px;
-  font-weight: 500;
+  margin-bottom: 8px;
 }
 
 .question-reason {
   font-size: 12px;
   color: #909399;
-  padding-left: 10px;
-  border-left: 2px solid #e4e7ed;
 }
 
 .info-collapse {
-  margin-bottom: 16px;
+  margin-top: 20px;
 }
 
 .skills-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .skill-tag {
   margin: 0;
 }
 
-.education-content,
-.experience-content,
-.work-content,
-.project-content {
-  padding: 10px;
-  background: #fafafa;
-  border-radius: 4px;
-}
-
-.education-content p,
-.experience-content p,
-.work-content p,
-.project-content p {
-  margin: 0;
-  font-size: 13px;
-  color: #303133;
-  line-height: 1.7;
-}
-
-.original-content {
-  padding: 10px 0;
-}
-
-.footer-actions {
-  display: flex;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid #ebeef5;
-  margin-top: 16px;
-}
-
-.footer-actions .el-button {
-  flex: 1;
-}
-
-.footer-actions .el-icon {
-  margin-right: 4px;
-}
-
-.preview-content {
-  height: 70vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.preview-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-
-.word-tip {
-  text-align: center;
-  color: #909399;
-}
-
-.word-tip p {
-  margin: 10px 0;
-}
-
-.file-info {
-  font-size: 12px;
+.no-data-text {
   color: #c0c4cc;
+  font-size: 13px;
+}
+
+.companies-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.company-tag {
+  margin: 0;
+}
+
+.education-content,
+.work-content,
+.project-content,
+.experience-content {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
 }
 
 .archive-reason-section {
   margin-top: 20px;
-  padding: 16px;
-  background: #fdf6ec;
-  border: 1px solid #faecd8;
-  border-radius: 6px;
-}
-
-.archive-reason-section .section-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #e6a23c;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 10px;
+  padding: 14px 18px;
+  background: #fef0f0;
+  border: 1px solid #fde2e2;
+  border-radius: 8px;
 }
 
 .archive-reason-content {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  color: #606266;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
-  line-height: 1.6;
-}
-
-.archive-reason-content .el-icon {
-  color: #e6a23c;
-  font-size: 16px;
-  margin-top: 2px;
-  flex-shrink: 0;
+  color: #f56c6c;
 }
 </style>

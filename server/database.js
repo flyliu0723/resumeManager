@@ -327,9 +327,45 @@ const positionResumeStmt = {
     const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
     run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
   },
-  updateStatus: (id, status) => run('UPDATE position_resumes SET status = ? WHERE id = ?', [String(status), Number(id)]),
+  updateStatus: (id, status, note, jdSupplement) => {
+    const sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ? WHERE id = ?'
+    run(sql, [String(status), String(status), String(jdSupplement || ''), Number(id)])
+  },
+  updateJdSupplement: (id, jdSupplement) => {
+    run('UPDATE position_resumes SET jd_supplement = ? WHERE id = ?', [String(jdSupplement || ''), Number(id)])
+  },
   delete: (id) => run('DELETE FROM position_resumes WHERE id = ?', [Number(id)]),
   getByResumeAndPosition: (resumeId, positionId) => get('SELECT * FROM position_resumes WHERE resume_id = ? AND position_id = ?', [Number(resumeId), Number(positionId)])
+}
+
+const flowLogStmt = {
+  insert: (matchId, fromStatus, toStatus, note, jdSupplement) => {
+    const result = db.run(
+      'INSERT INTO position_resume_flow_logs (match_id, from_status, to_status, note, jd_supplement) VALUES (?, ?, ?, ?, ?)',
+      [Number(matchId), String(fromStatus || ''), String(toStatus), String(note || ''), String(jdSupplement || '')]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+  getByMatchId: (matchId) => {
+    return all('SELECT * FROM position_resume_flow_logs WHERE match_id = ? ORDER BY created_at ASC', [Number(matchId)])
+  },
+  delete: (id) => run('DELETE FROM position_resume_flow_logs WHERE id = ?', [Number(id)])
+}
+
+const candidateJdSupplementStmt = {
+  insert: (matchId, content) => {
+    const result = db.run(
+      'INSERT INTO candidate_jd_supplements (match_id, content) VALUES (?, ?)',
+      [Number(matchId), String(content)]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+  getByMatchId: (matchId) => {
+    return all('SELECT * FROM candidate_jd_supplements WHERE match_id = ? ORDER BY created_at ASC', [Number(matchId)])
+  },
+  delete: (id) => run('DELETE FROM candidate_jd_supplements WHERE id = ?', [Number(id)])
 }
 
 const aiConfigStmt = {
@@ -414,5 +450,6 @@ module.exports = {
   positionNoteStmt,
   resumeStmt,
   positionResumeStmt,
+  flowLogStmt,
   aiConfigStmt
 }
