@@ -185,9 +185,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Plus, Edit, ArrowDown, FolderOpened, RefreshRight } from '@element-plus/icons-vue'
+import { ref, computed, reactive, onMounted } from 'vue'
+import { Plus, ArrowDown, Edit, Delete, FolderOpened, FolderRemove } from '@element-plus/icons-vue'
 import { usePositionStore } from '../stores/position'
+import { api } from '../utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const store = usePositionStore()
@@ -252,14 +253,9 @@ const searchCompanies = async (keyword, cb) => {
     return
   }
   try {
-    const res = await fetch(`http://localhost:3000/api/companies/search?keyword=${encodeURIComponent(keyword)}`)
-    const data = await res.json()
-    if (data.success) {
-      companyList.value = data.data
-      cb(companyList.value.map(c => ({ value: c.name })))
-    } else {
-      cb([])
-    }
+    const companies = await api.get('/companies/search', { keyword })
+    companyList.value = companies || []
+    cb(companyList.value.map(c => ({ value: c.name })))
   } catch (error) {
     console.error('搜索公司失败:', error)
     cb([])

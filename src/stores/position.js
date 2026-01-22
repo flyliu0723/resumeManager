@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-
-const API_BASE = 'http://localhost:3000/api'
+import { api } from '../utils/api'
 
 export const usePositionStore = defineStore('position', () => {
   const positions = ref([])
@@ -10,20 +9,18 @@ export const usePositionStore = defineStore('position', () => {
   const currentPositionId = ref(null)
   const resumes = ref({})
   const matches = ref({})
+  const positionNotes = ref({})
 
   async function fetchPositions() {
     try {
-      const res = await fetch(`${API_BASE}/positions`)
-      const data = await res.json()
-      if (data.success) {
-        activePositions.value = data.data.active || []
-        archivedPositions.value = data.data.archived || []
-        positions.value = [...activePositions.value, ...archivedPositions.value]
-        
-        if (activePositions.value.length > 0 && !currentPositionId.value) {
-          currentPositionId.value = activePositions.value[0].id
-          fetchResumes(currentPositionId.value)
-        }
+      const data = await api.get('/positions')
+      activePositions.value = data.active || []
+      archivedPositions.value = data.archived || []
+      positions.value = [...activePositions.value, ...archivedPositions.value]
+      
+      if (activePositions.value.length > 0 && !currentPositionId.value) {
+        currentPositionId.value = activePositions.value[0].id
+        fetchResumes(currentPositionId.value)
       }
     } catch (error) {
       console.error('获取职位列表失败:', error)
@@ -32,28 +29,20 @@ export const usePositionStore = defineStore('position', () => {
 
   async function archivePosition(id, reason) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${id}/archive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
-      })
-      const data = await res.json()
+      const updatedPosition = await api.post(`/positions/${id}/archive`, { reason })
       
-      if (data.success) {
-        const index = activePositions.value.findIndex(p => p.id === Number(id))
-        if (index > -1) {
-          const [archived] = activePositions.value.splice(index, 1)
-          archived.archive_reason = reason
-          archived.status = 'archived'
-          archivedPositions.value.unshift(archived)
-        }
-        
-        if (currentPositionId.value === Number(id)) {
-          currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
-        }
-        return true
+      const index = activePositions.value.findIndex(p => p.id === Number(id))
+      if (index > -1) {
+        const [archived] = activePositions.value.splice(index, 1)
+        archived.archive_reason = reason
+        archived.status = 'archived'
+        archivedPositions.value.unshift(archived)
       }
-      return false
+      
+      if (currentPositionId.value === Number(id)) {
+        currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
+      }
+      return true
     } catch (error) {
       console.error('归档职位失败:', error)
       return false
@@ -62,38 +51,27 @@ export const usePositionStore = defineStore('position', () => {
 
   async function restorePosition(id) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${id}/restore`, {
-        method: 'POST'
-      })
-      const data = await res.json()
+      const updatedPosition = await api.post(`/positions/${id}/restore`)
       
-      if (data.success) {
-        const index = archivedPositions.value.findIndex(p => p.id === Number(id))
-        if (index > -1) {
-          const [restored] = archivedPositions.value.splice(index, 1)
-          restored.status = 'active'
-          restored.archive_reason = null
-          restored.archived_at = null
-          activePositions.value.unshift(restored)
-        }
-        return true
+      const index = archivedPositions.value.findIndex(p => p.id === Number(id))
+      if (index > -1) {
+        const [restored] = archivedPositions.value.splice(index, 1)
+        restored.status = 'active'
+        restored.archive_reason = null
+        restored.archived_at = null
+        activePositions.value.unshift(restored)
       }
-      return false
+      return true
     } catch (error) {
       console.error('恢复职位失败:', error)
       return false
     }
   }
 
-  const positionNotes = ref({})
-
   async function fetchPositionNotes(positionId) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${positionId}/notes`)
-      const data = await res.json()
-      if (data.success) {
-        positionNotes.value[positionId] = data.data || []
-      }
+      const notes = await api.get(`/positions/${positionId}/notes`)
+      positionNotes.value[positionId] = notes || []
     } catch (error) {
       console.error('获取职位补充失败:', error)
     }
@@ -101,20 +79,12 @@ export const usePositionStore = defineStore('position', () => {
 
   async function addPositionNote(positionId, content) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${positionId}/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      })
-      const data = await res.json()
-      if (data.success) {
-        if (!positionNotes.value[positionId]) {
-          positionNotes.value[positionId] = []
-        }
-        positionNotes.value[positionId].push(data.data)
-        return data.data
+      const note = await api.post(`/positions/${positionId}/notes`, { content })
+      if (!positionNotes.value[positionId]) {
+        positionNotes.value[positionId] = []
       }
-      return null
+      positionNotes.value[positionId].push(note)
+      return note
     } catch (error) {
       console.error('添加职位补充失败:', error)
       return null
@@ -123,21 +93,13 @@ export const usePositionStore = defineStore('position', () => {
 
   async function updatePositionNote(positionId, noteId, content) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${positionId}/notes/${noteId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
-      })
-      const data = await res.json()
-      if (data.success) {
-        const notes = positionNotes.value[positionId] || []
-        const index = notes.findIndex(n => n.id === noteId)
-        if (index > -1) {
-          notes[index] = data.data
-        }
-        return true
+      const success = await api.put(`/positions/${positionId}/notes/${noteId}`, { content })
+      const notes = positionNotes.value[positionId] || []
+      const index = notes.findIndex(n => n.id === noteId)
+      if (index > -1) {
+        notes[index] = success
       }
-      return false
+      return true
     } catch (error) {
       console.error('更新职位补充失败:', error)
       return false
@@ -146,20 +108,13 @@ export const usePositionStore = defineStore('position', () => {
 
   async function deletePositionNote(positionId, noteId) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${positionId}/notes/${noteId}`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
-      
-      if (data.success) {
-        const notes = positionNotes.value[positionId] || []
-        const index = notes.findIndex(n => n.id === noteId)
-        if (index > -1) {
-          notes.splice(index, 1)
-        }
-        return true
+      await api.delete(`/positions/${positionId}/notes/${noteId}`)
+      const notes = positionNotes.value[positionId] || []
+      const index = notes.findIndex(n => n.id === noteId)
+      if (index > -1) {
+        notes.splice(index, 1)
       }
-      return false
+      return true
     } catch (error) {
       console.error('删除职位补充失败:', error)
       return false
@@ -168,28 +123,17 @@ export const usePositionStore = defineStore('position', () => {
 
   async function addPosition(position) {
     try {
-      const res = await fetch(`${API_BASE}/positions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(position)
-      })
-      const data = await res.json()
+      const newPosition = await api.post('/positions', position)
+      activePositions.value.unshift(newPosition)
+      positions.value = [...activePositions.value, ...archivedPositions.value]
       
-      console.log('添加职位响应:', data)
-      
-      if (data.success && data.data) {
-        activePositions.value.unshift(data.data)
-        positions.value = [...activePositions.value, ...archivedPositions.value]
-        if (!currentPositionId.value || currentPositionId.value !== data.data.id) {
-          currentPositionId.value = data.data.id
-        }
-        if (!resumes.value[data.data.id]) {
-          resumes.value[data.data.id] = []
-        }
-        return data.data.id
+      if (!currentPositionId.value || currentPositionId.value !== newPosition.id) {
+        currentPositionId.value = newPosition.id
       }
-      console.warn('添加失败，响应数据:', data)
-      return data.data?.id || null
+      if (!matches.value[newPosition.id]) {
+        matches.value[newPosition.id] = []
+      }
+      return newPosition.id
     } catch (error) {
       console.error('添加职位失败:', error)
       return null
@@ -198,26 +142,13 @@ export const usePositionStore = defineStore('position', () => {
 
   async function updatePosition(id, position) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(position)
-      })
-      const data = await res.json()
-      
-      if (data.success) {
-        const index = activePositions.value.findIndex(p => p.id === Number(id))
-        if (index > -1) {
-          activePositions.value[index] = data.data
-        }
-        positions.value = [...activePositions.value, ...archivedPositions.value]
-        return true
+      const updatedPosition = await api.put(`/positions/${id}`, position)
+      const index = activePositions.value.findIndex(p => p.id === Number(id))
+      if (index > -1) {
+        activePositions.value[index] = updatedPosition
       }
-      if (data.message === '已归档的职位不能编辑') {
-        ElMessage.warning('已归档的职位不能编辑')
-        return false
-      }
-      return false
+      positions.value = [...activePositions.value, ...archivedPositions.value]
+      return true
     } catch (error) {
       console.error('更新职位失败:', error)
       return false
@@ -226,24 +157,18 @@ export const usePositionStore = defineStore('position', () => {
 
   async function deletePosition(id) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${id}`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
+      await api.delete(`/positions/${id}`)
       
-      if (data.success) {
-        const index = activePositions.value.findIndex(p => p.id === Number(id))
-        if (index > -1) {
-          activePositions.value.splice(index, 1)
-        }
-        
-        if (currentPositionId.value === Number(id)) {
-          currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
-        }
-        delete resumes.value[id]
-        return true
+      const index = activePositions.value.findIndex(p => p.id === Number(id))
+      if (index > -1) {
+        activePositions.value.splice(index, 1)
       }
-      return false
+      
+      if (currentPositionId.value === Number(id)) {
+        currentPositionId.value = activePositions.value.length > 0 ? activePositions.value[0].id : null
+      }
+      delete matches.value[id]
+      return true
     } catch (error) {
       console.error('删除职位失败:', error)
       return false
@@ -257,11 +182,8 @@ export const usePositionStore = defineStore('position', () => {
 
   async function fetchResumes(positionId) {
     try {
-      const res = await fetch(`${API_BASE}/positions/${positionId}/resumes`)
-      const data = await res.json()
-      if (data.success) {
-        matches.value[positionId] = data.data
-      }
+      const data = await api.get(`/positions/${positionId}/resumes`)
+      matches.value[positionId] = data || []
     } catch (error) {
       console.error('获取简历列表失败:', error)
     }
@@ -269,15 +191,11 @@ export const usePositionStore = defineStore('position', () => {
 
   async function fetchResumeDetail(resumeId) {
     try {
-      const res = await fetch(`${API_BASE}/resumes/${resumeId}`)
-      const data = await res.json()
-      if (data.success) {
-        return data.data
-      }
+      return await api.get(`/resumes/${resumeId}`)
     } catch (error) {
       console.error('获取简历详情失败:', error)
+      return null
     }
-    return null
   }
 
   async function addResume(positionId, resume) {
@@ -293,20 +211,13 @@ export const usePositionStore = defineStore('position', () => {
       formData.append('type', resume.type)
       formData.append('file', resume.raw)
 
-      const res = await fetch(`${API_BASE}/positions/${positionId}/resumes`, {
-        method: 'POST',
-        body: formData
-      })
-      const data = await res.json()
+      const newMatch = await api.upload(`/positions/${positionId}/resumes`, formData)
       
-      if (data.success) {
-        if (!matches.value[positionId]) {
-          matches.value[positionId] = []
-        }
-        matches.value[positionId].push(data.data)
-        return true
+      if (!matches.value[positionId]) {
+        matches.value[positionId] = []
       }
-      return false
+      matches.value[positionId].unshift(newMatch)
+      return true
     } catch (error) {
       console.error('上传简历失败:', error)
       return false
@@ -315,18 +226,11 @@ export const usePositionStore = defineStore('position', () => {
 
   async function deleteResume(resumeId) {
     try {
-      const res = await fetch(`${API_BASE}/resumes/${resumeId}`, {
-        method: 'DELETE'
-      })
-      const data = await res.json()
-      
-      if (data.success) {
-        if (currentPositionId.value) {
-          await fetchResumes(currentPositionId.value)
-        }
-        return true
+      await api.delete(`/resumes/${resumeId}`)
+      if (currentPositionId.value) {
+        await fetchResumes(currentPositionId.value)
       }
-      return false
+      return true
     } catch (error) {
       console.error('删除简历失败:', error)
       return false
@@ -335,18 +239,11 @@ export const usePositionStore = defineStore('position', () => {
 
   async function updateMatchStatus(matchId, status) {
     try {
-      const res = await fetch(`${API_BASE}/position-resumes/${matchId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      })
-      const data = await res.json()
-      
-      if (data.success && currentPositionId.value) {
+      await api.put(`/position-resumes/${matchId}/status`, { status })
+      if (currentPositionId.value) {
         await fetchResumes(currentPositionId.value)
-        return true
       }
-      return false
+      return true
     } catch (error) {
       console.error('更新匹配状态失败:', error)
       return false

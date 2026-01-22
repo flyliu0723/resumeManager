@@ -159,6 +159,7 @@ import { ref, computed } from 'vue'
 import { usePositionStore } from '../stores/position'
 import { Document, View, Delete, Warning, DocumentChecked, User, Message, Phone } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { api } from '../utils/api'
 
 const store = usePositionStore()
 const previewVisible = ref(false)
@@ -214,32 +215,25 @@ const parseResume = async (resume) => {
   try {
     parsingIds.value.push(resume.id)
     
-    const res = await fetch(`http://localhost:3000/api/resumes/${resume.id}/parse`, {
-      method: 'POST'
-    })
-    const data = await res.json()
-    if (data.success) {
-      ElMessage.success('解析成功')
-      store.fetchResumes(store.currentPositionId)
-      // 刷新解析结果展示
-      setTimeout(() => {
-        const updatedResume = store.getPositionResumes(store.currentPositionId).find(r => r.id === resume.id)
-        if (updatedResume) {
-          currentParsedResume.value = updatedResume
-          if (updatedResume.parsed_data) {
-            try {
-              parsedResultData.value = JSON.parse(updatedResume.parsed_data)
-            } catch (e) {
-              parsedResultData.value = null
-            }
+    await api.post(`/resumes/${resume.id}/parse`)
+    ElMessage.success('解析成功')
+    store.fetchResumes(store.currentPositionId)
+    
+    setTimeout(() => {
+      const updatedResume = store.getPositionResumes(store.currentPositionId).find(r => r.id === resume.id)
+      if (updatedResume) {
+        currentParsedResume.value = updatedResume
+        if (updatedResume.parsed_data) {
+          try {
+            parsedResultData.value = JSON.parse(updatedResume.parsed_data)
+          } catch (e) {
+            parsedResultData.value = null
           }
         }
-      }, 500)
-    } else {
-      ElMessage.error(data.message || '解析失败')
-    }
+      }
+    }, 500)
   } catch (error) {
-    ElMessage.error('解析失败')
+    ElMessage.error(error.message || '解析失败')
   } finally {
     parsingIds.value = parsingIds.value.filter(id => id !== resume.id)
   }

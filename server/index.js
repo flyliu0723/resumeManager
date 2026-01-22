@@ -19,6 +19,23 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 }
 
+function success(res, data = null, message = null) {
+  res.json({
+    code: 200,
+    success: true,
+    data,
+    message
+  })
+}
+
+function error(res, message, code = 500) {
+  res.json({
+    code,
+    success: false,
+    message
+  })
+}
+
 app.post('/api/positions/:positionId/resumes', (req, res) => {
   let positionId = req.params.positionId
   let recordFileName = ''
@@ -70,7 +87,7 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
   bb.on('close', async () => {
     try {
       if (!recordFileName) {
-        return res.status(400).json({ success: false, message: '没有上传文件' })
+        return error(res, '没有上传文件', 400)
       }
 
       if (!tempFilePath || !fs.existsSync(tempFilePath)) {
@@ -128,10 +145,7 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath)
         }
-        return res.status(400).json({ 
-          success: false, 
-          message: `不支持的图片格式 ${ext}，请上传 PDF 或 Word 格式的简历文件`
-        })
+        return error(res, `不支持的图片格式 ${ext}，请上传 PDF 或 Word 格式的简历文件`, 400)
       }
 
       const result = await parserFactory.parse(filePath, recordFileName, positionId)
@@ -196,10 +210,10 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
         parsed_data_obj: parsedDataObj
       }
 
-      res.json({ success: true, data: responseData })
+      success(res, responseData, '上传成功')
     } catch (error) {
       console.error('上传简历失败:', error)
-      res.status(500).json({ success: false, message: error.message })
+      error(res, error.message)
     }
   })
   
@@ -208,19 +222,18 @@ app.post('/api/positions/:positionId/resumes', (req, res) => {
 
 app.post('/api/resumes/:id/parse', async (req, res) => {
   try {
-    console.log(req.params.id, '>>>>>>req.params.id', req)
     const resume = resumeStmt.getById(req.params.id)
     if (!resume || !resume.file_path) {
-      return res.status(404).json({ success: false, message: '简历不存在或无文件' })
+      return error(res, '简历不存在或无文件', 404)
     }
     
     if (!fs.existsSync(resume.file_path)) {
-      return res.status(404).json({ success: false, message: '文件不存在' })
+      return error(res, '文件不存在', 404)
     }
     
     const positionId = req.query.positionId
     if (!positionId) {
-      return res.status(400).json({ success: false, message: '缺少职位ID' })
+      return error(res, '缺少职位ID', 400)
     }
     
     console.log('\n========== 重新解析简历 ==========')
@@ -270,10 +283,10 @@ app.post('/api/resumes/:id/parse', async (req, res) => {
     }, 100)
 
     const updatedResume = resumeStmt.getById(req.params.id)
-    res.json({ success: true, data: updatedResume })
+    success(res, updatedResume, '解析已开始')
   } catch (error) {
     console.error('重新解析失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -344,12 +357,12 @@ app.post('/api/positions/:positionId/resumes/:resumeId/evaluate', async (req, re
     
     const position = positionStmt.getById(positionId)
     if (!position) {
-      return res.status(404).json({ success: false, message: '职位不存在' })
+      return error(res, '职位不存在', 404)
     }
     
     const resume = resumeStmt.getById(resumeId)
     if (!resume) {
-      return res.status(404).json({ success: false, message: '简历不存在' })
+      return error(res, '简历不存在', 404)
     }
     
     let match = positionResumeStmt.getByResumeAndPosition(resumeId, positionId)
@@ -362,10 +375,10 @@ app.post('/api/positions/:positionId/resumes/:resumeId/evaluate', async (req, re
       runEvaluation(match.id, resumeId, positionId, resume.content, resume.parsed_data || '{}')
     }, 100)
 
-    res.json({ success: true, message: '评估已开始，请稍后刷新查看结果', data: { matchId: match.id } })
+    success(res, { matchId: match.id }, '评估已开始，请稍后刷新查看结果')
   } catch (error) {
     console.error('评估失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -373,15 +386,12 @@ app.get('/api/positions', (req, res) => {
   try {
     const activePositions = positionStmt.getActive()
     const archivedPositions = positionStmt.getArchived()
-    res.json({ 
-      success: true, 
-      data: {
-        active: activePositions,
-        archived: archivedPositions
-      }
+    success(res, {
+      active: activePositions,
+      archived: archivedPositions
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -391,12 +401,12 @@ app.post('/api/positions/:id/archive', (req, res) => {
     const result = positionStmt.archive(req.params.id, reason)
     if (result.changes) {
       const position = positionStmt.getById(req.params.id)
-      res.json({ success: true, data: position })
+      success(res, position)
     } else {
-      res.status(404).json({ success: false, message: '职位不存在' })
+      error(res, '职位不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -405,22 +415,21 @@ app.post('/api/positions/:id/restore', (req, res) => {
     const result = positionStmt.restore(req.params.id)
     if (result.changes) {
       const position = positionStmt.getById(req.params.id)
-      res.json({ success: true, data: position })
+      success(res, position)
     } else {
-      res.status(404).json({ success: false, message: '职位不存在' })
+      error(res, '职位不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
-// 职位补充信息 API
 app.get('/api/positions/:positionId/notes', (req, res) => {
   try {
     const notes = positionNoteStmt.getByPosition(req.params.positionId)
-    res.json({ success: true, data: notes })
+    success(res, notes)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -428,14 +437,14 @@ app.post('/api/positions/:positionId/notes', (req, res) => {
   try {
     const { content } = req.body
     if (!content || !content.trim()) {
-      return res.status(400).json({ success: false, message: '补充内容不能为空' })
+      return error(res, '补充内容不能为空', 400)
     }
     
     const result = positionNoteStmt.insert(req.params.positionId, content.trim())
     const note = positionNoteStmt.getById(result.lastInsertRowid)
-    res.json({ success: true, data: note })
+    success(res, note)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -443,41 +452,37 @@ app.put('/api/positions/:positionId/notes/:noteId', (req, res) => {
   try {
     const { content } = req.body
     if (!content || !content.trim()) {
-      return res.status(400).json({ success: false, message: '补充内容不能为空' })
+      return error(res, '补充内容不能为空', 400)
     }
     
     const note = positionNoteStmt.getById(req.params.noteId)
     if (!note) {
-      return res.status(404).json({ success: false, message: '补充信息不存在' })
+      return error(res, '补充信息不存在', 404)
     }
     
     const result = positionNoteStmt.update(req.params.noteId, content.trim())
     if (result.changes) {
       const updatedNote = positionNoteStmt.getById(req.params.noteId)
-      res.json({ success: true, data: updatedNote })
+      success(res, updatedNote)
     } else {
       const refreshedNote = positionNoteStmt.getById(req.params.noteId)
       if (refreshedNote) {
-        res.json({ success: true, data: refreshedNote })
+        success(res, refreshedNote)
       } else {
-        res.json({ success: true, message: '更新成功' })
+        success(res, null, '更新成功')
       }
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.delete('/api/positions/:positionId/notes/:noteId', (req, res) => {
   try {
     const result = positionNoteStmt.delete(req.params.noteId)
-    if (result.changes) {
-      res.json({ success: true, message: '删除成功' })
-    } else {
-      res.json({ success: true, message: '删除成功或记录不存在' })
-    }
+    success(res, null, '删除成功')
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -485,12 +490,12 @@ app.get('/api/positions/:id', (req, res) => {
   try {
     const position = positionStmt.getById(req.params.id)
     if (position) {
-      res.json({ success: true, data: position })
+      success(res, position)
     } else {
-      res.status(404).json({ success: false, message: '职位不存在' })
+      error(res, '职位不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -502,7 +507,7 @@ app.post('/api/positions', (req, res) => {
     console.log('name:', name, 'company:', company, 'description:', description, 'start_date:', start_date)
     
     if (!name) {
-      return res.status(400).json({ success: false, message: '职位名称不能为空' })
+      return error(res, '职位名称不能为空', 400)
     }
     
     if (company) {
@@ -516,10 +521,10 @@ app.post('/api/positions', (req, res) => {
     console.log('查询新职位:', newPosition)
     console.log('================================\n')
     
-    res.json({ success: true, data: newPosition })
+    success(res, newPosition)
   } catch (error) {
     console.error('创建职位失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -527,11 +532,11 @@ app.put('/api/positions/:id', (req, res) => {
   try {
     const position = positionStmt.getById(req.params.id)
     if (!position) {
-      return res.status(404).json({ success: false, message: '职位不存在' })
+      return error(res, '职位不存在', 404)
     }
     
     if (position.status === 'archived') {
-      return res.status(400).json({ success: false, message: '已归档的职位不能编辑' })
+      return error(res, '已归档的职位不能编辑', 400)
     }
     
     const { name, company, description, start_date } = req.body
@@ -544,12 +549,12 @@ app.put('/api/positions/:id', (req, res) => {
     
     if (result.changes) {
       const updatedPosition = positionStmt.getById(req.params.id)
-      res.json({ success: true, data: updatedPosition })
+      success(res, updatedPosition)
     } else {
-      res.status(404).json({ success: false, message: '职位不存在' })
+      error(res, '职位不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -557,21 +562,21 @@ app.delete('/api/positions/:id', (req, res) => {
   try {
     const result = positionStmt.delete(Number(req.params.id))
     if (result.changes) {
-      res.json({ success: true, message: '删除成功' })
+      success(res, null, '删除成功')
     } else {
-      res.status(404).json({ success: false, message: '职位不存在' })
+      error(res, '职位不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.get('/api/companies', (req, res) => {
   try {
     const companies = companyStmt.getAll()
-    res.json({ success: true, data: companies })
+    success(res, companies)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -579,12 +584,12 @@ app.get('/api/companies/search', (req, res) => {
   try {
     const { keyword } = req.query
     if (!keyword) {
-      return res.json({ success: true, data: [] })
+      return success(res, [])
     }
     const companies = companyStmt.search(keyword)
-    res.json({ success: true, data: companies })
+    success(res, companies)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -601,29 +606,16 @@ app.get('/api/resumes/:id', (req, res) => {
         }
       }
       
-      let evaluation = null
-      if (resume.evaluation) {
-        try {
-          evaluation = JSON.parse(resume.evaluation)
-        } catch (e) {
-          console.warn('解析 evaluation 失败:', e)
-        }
-      }
-      
-      res.json({ 
-        success: true, 
-        data: {
-          ...resume,
-          parsed_data_obj: parsedData,
-          evaluation_obj: evaluation
-        }
+      success(res, {
+        ...resume,
+        parsed_data_obj: parsedData
       })
     } else {
-      res.status(404).json({ success: false, message: '简历不存在' })
+      error(res, '简历不存在', 404)
     }
   } catch (error) {
     console.error('获取简历详情失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -665,9 +657,9 @@ app.get('/api/positions/:positionId/resumes', (req, res) => {
         questions_list: questionsList
       }
     })
-    res.json({ success: true, data })
+    success(res, data)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -689,14 +681,10 @@ app.delete('/api/resumes/:id', (req, res) => {
     console.log('影响行数:', result.changes)
     console.log('================================\n')
     
-    if (result.changes) {
-      res.json({ success: true, message: '删除成功' })
-    } else {
-      res.json({ success: true, message: '删除成功或记录不存在' })
-    }
+    success(res, null, '删除成功')
   } catch (error) {
     console.error('删除简历失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -709,10 +697,10 @@ app.get('/api/resumes/:id/preview', (req, res) => {
       res.setHeader('Content-Disposition', `inline; filename="${fileName}"`)
       res.sendFile(path.resolve(resume.file_path))
     } else {
-      res.status(404).json({ success: false, message: '简历文件不存在' })
+      error(res, '简历文件不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -725,10 +713,10 @@ app.get('/api/resumes/:id/download', (req, res) => {
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
       res.sendFile(path.resolve(resume.file_path))
     } else {
-      res.status(404).json({ success: false, message: '简历文件不存在' })
+      error(res, '简历文件不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -736,28 +724,25 @@ app.get('/api/resumes/:id/content', (req, res) => {
   try {
     const resume = resumeStmt.getById(req.params.id)
     if (resume) {
-      res.json({ 
-        success: true, 
-        data: {
-          candidateName: resume.candidate_name || '未知',
-          content: resume.content || ''
-        }
+      success(res, {
+        candidateName: resume.candidate_name || '未知',
+        content: resume.content || ''
       })
     } else {
-      res.status(404).json({ success: false, message: '简历不存在' })
+      error(res, '简历不存在', 404)
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.get('/api/ai-configs', (req, res) => {
   try {
     const configs = aiConfigStmt.getAll()
-    res.json({ success: true, data: configs })
+    success(res, configs)
   } catch (error) {
     console.error('获取AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -765,22 +750,22 @@ app.get('/api/ai-configs/:id', (req, res) => {
   try {
     const config = aiConfigStmt.getById(req.params.id)
     if (config) {
-      res.json({ success: true, data: config })
+      success(res, config)
     } else {
-      res.status(404).json({ success: false, message: '配置不存在' })
+      error(res, '配置不存在', 404)
     }
   } catch (error) {
     console.error('获取AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.get('/api/ai-configs/active/current', (req, res) => {
   try {
     const config = aiConfigStmt.getActive()
-    res.json({ success: true, data: config })
+    success(res, config)
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -789,16 +774,16 @@ app.post('/api/ai-configs', (req, res) => {
     const { name, provider, api_key, api_url, model, priority } = req.body
     
     if (!name || !provider) {
-      return res.status(400).json({ success: false, message: '名称和提供商不能为空' })
+      return error(res, '名称和提供商不能为空', 400)
     }
 
     const result = aiConfigStmt.insert(name, provider, api_key, api_url, model, priority || 0)
     const newConfig = aiConfigStmt.getById(result.lastInsertRowid)
     
-    res.json({ success: true, data: newConfig })
+    success(res, newConfig)
   } catch (error) {
     console.error('创建AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -807,16 +792,16 @@ app.put('/api/ai-configs/:id', (req, res) => {
     const { name, provider, api_key, api_url, model, is_active, priority } = req.body
     
     if (!name || !provider) {
-      return res.status(400).json({ success: false, message: '名称和提供商不能为空' })
+      return error(res, '名称和提供商不能为空', 400)
     }
 
     aiConfigStmt.update(req.params.id, name, provider, api_key, api_url, model, is_active, priority)
     const updatedConfig = aiConfigStmt.getById(req.params.id)
     
-    res.json({ success: true, data: updatedConfig })
+    success(res, updatedConfig)
   } catch (error) {
     console.error('更新AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -824,40 +809,20 @@ app.post('/api/ai-configs/:id/set-active', (req, res) => {
   try {
     aiConfigStmt.setActive(req.params.id)
     const config = aiConfigStmt.getById(req.params.id)
-    res.json({ success: true, data: config })
+    success(res, config)
   } catch (error) {
     console.error('设置激活配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.post('/api/ai-configs/:id/test', (req, res) => {
   try {
     const result = aiConfigStmt.test(req.params.id)
-    res.json(result)
+    success(res, result)
   } catch (error) {
     console.error('测试AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
-  }
-})
-
-app.put('/api/position-resumes/:id/status', (req, res) => {
-  try {
-    const { status } = req.body
-    if (!status) {
-      return res.status(400).json({ success: false, message: '状态不能为空' })
-    }
-    
-    const result = positionResumeStmt.updateStatus(req.params.id, status)
-    if (result.changes) {
-      const match = positionResumeStmt.getById(req.params.id)
-      res.json({ success: true, data: match })
-    } else {
-      res.status(404).json({ success: false, message: '匹配记录不存在' })
-    }
-  } catch (error) {
-    console.error('更新状态失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
@@ -865,27 +830,24 @@ app.delete('/api/ai-configs/:id', (req, res) => {
   try {
     const config = aiConfigStmt.getById(req.params.id)
     if (!config) {
-      return res.status(404).json({ success: false, message: '配置不存在' })
+      return error(res, '配置不存在', 404)
     }
     
     aiConfigStmt.delete(req.params.id)
-    res.json({ success: true, message: '删除成功' })
+    success(res, null, '删除成功')
   } catch (error) {
     console.error('删除AI配置失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    error(res, error.message)
   }
 })
 
 app.get('/api/ai-providers', (req, res) => {
-  res.json({
-    success: true,
-    data: [
-      { value: 'zhipu', label: '智谱GLM', fields: ['api_key', 'model'], apiUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-      { value: 'minimax', label: 'MiniMax', fields: ['api_key', 'model'], apiUrl: 'https://api.minimax.chat/v1' },
-      { value: 'deepseek', label: 'DeepSeek', fields: ['api_key', 'model'], apiUrl: 'https://api.deepseek.com' },
-      { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] }
-    ]
-  })
+  success(res, [
+    { value: 'zhipu', label: '智谱GLM', fields: ['api_key', 'model'], apiUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+    { value: 'minimax', label: 'MiniMax', fields: ['api_key', 'model'], apiUrl: 'https://api.minimax.chat/v1' },
+    { value: 'deepseek', label: 'DeepSeek', fields: ['api_key', 'model'], apiUrl: 'https://api.deepseek.com' },
+    { value: 'openai', label: 'OpenAI', fields: ['api_key', 'api_url', 'model'] }
+  ])
 })
 
 app.get('/api/ai-models', (req, res) => {
@@ -917,7 +879,27 @@ app.get('/api/ai-models', (req, res) => {
     ]
   }
 
-  res.json({ success: true, data: models })
+  success(res, models)
+})
+
+app.put('/api/position-resumes/:id/status', (req, res) => {
+  try {
+    const { status } = req.body
+    if (!status) {
+      return error(res, '状态不能为空', 400)
+    }
+    
+    const result = positionResumeStmt.updateStatus(req.params.id, status)
+    if (result.changes) {
+      const match = positionResumeStmt.getById(req.params.id)
+      success(res, match)
+    } else {
+      error(res, '匹配记录不存在', 404)
+    }
+  } catch (error) {
+    console.error('更新状态失败:', error)
+    error(res, error.message)
+  }
 })
 
 async function startServer() {

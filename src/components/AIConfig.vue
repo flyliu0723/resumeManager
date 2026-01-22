@@ -127,8 +127,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, CircleClose } from '@element-plus/icons-vue'
-
-const API_BASE = 'http://localhost:3000'
+import { api } from '../utils/api'
 
 const configs = ref([])
 const loading = ref(false)
@@ -209,11 +208,8 @@ const handleProviderChange = () => {
 
 const fetchProviders = async () => {
   try {
-    const res = await fetch(`${API_BASE}/api/ai-providers`)
-    const data = await res.json()
-    if (data.success) {
-      providers.value = data.data
-    }
+    const data = await api.get('/ai-providers')
+    providers.value = data || []
   } catch (e) {
     console.error('获取提供商列表失败:', e)
   }
@@ -221,11 +217,8 @@ const fetchProviders = async () => {
 
 const fetchModels = async (provider) => {
   try {
-    const res = await fetch(`${API_BASE}/api/ai-models?provider=${provider}`)
-    const data = await res.json()
-    if (data.success) {
-      availableModels.value = data.data
-    }
+    const data = await api.get('/ai-models', { provider })
+    availableModels.value = data || []
   } catch (e) {
     console.error('获取模型列表失败:', e)
   }
@@ -234,11 +227,8 @@ const fetchModels = async (provider) => {
 const fetchConfigs = async () => {
   loading.value = true
   try {
-    const res = await fetch(`${API_BASE}/api/ai-configs`)
-    const data = await res.json()
-    if (data.success) {
-      configs.value = data.data
-    }
+    const data = await api.get('/ai-configs')
+    configs.value = data || []
   } catch (e) {
     ElMessage.error('获取配置列表失败')
   } finally {
@@ -273,29 +263,17 @@ const saveConfig = async () => {
     await formRef.value.validate()
     saving.value = true
 
-    const url = isEdit.value
-      ? `${API_BASE}/api/ai-configs/${formData.value.id}`
-      : `${API_BASE}/api/ai-configs`
-
-    const method = isEdit.value ? 'PUT' : 'POST'
-
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData.value)
-    })
-
-    const data = await res.json()
-
-    if (data.success) {
-      ElMessage.success(isEdit.value ? '更新成功' : '添加成功')
-      dialogVisible.value = false
-      fetchConfigs()
+    if (isEdit.value) {
+      await api.put(`/ai-configs/${formData.value.id}`, formData.value)
     } else {
-      ElMessage.error(data.message || '保存失败')
+      await api.post('/ai-configs', formData.value)
     }
+
+    ElMessage.success(isEdit.value ? '更新成功' : '添加成功')
+    dialogVisible.value = false
+    fetchConfigs()
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.message || '保存失败')
   } finally {
     saving.value = false
   }
@@ -303,14 +281,11 @@ const saveConfig = async () => {
 
 const testConfig = async (config) => {
   try {
-    const res = await fetch(`${API_BASE}/api/ai-configs/${config.id}/test`, {
-      method: 'POST'
-    })
-    const data = await res.json()
-    testResult.value = data
+    const result = await api.post(`/ai-configs/${config.id}/test`)
+    testResult.value = result
     testDialogVisible.value = true
   } catch (e) {
-    testResult.value = { success: false, message: '测试请求失败' }
+    testResult.value = { success: false, message: e.message || '测试请求失败' }
     testDialogVisible.value = true
   }
 }
@@ -323,19 +298,14 @@ const setActive = async (config) => {
       type: 'warning'
     })
 
-    const res = await fetch(`${API_BASE}/api/ai-configs/${config.id}/set-active`, {
-      method: 'POST'
-    })
-    const data = await res.json()
-
-    if (data.success) {
-      ElMessage.success('已启用')
-      fetchConfigs()
-    } else {
-      ElMessage.error(data.message || '操作失败')
-    }
+    await api.post(`/ai-configs/${config.id}/set-active`)
+    ElMessage.success('已启用')
+    fetchConfigs()
   } catch (e) {
-    // 用户取消
+    // 用户取消或错误
+    if (e.message) {
+      ElMessage.error(e.message)
+    }
   }
 }
 
@@ -347,19 +317,14 @@ const deleteConfig = async (config) => {
       type: 'warning'
     })
 
-    const res = await fetch(`${API_BASE}/api/ai-configs/${config.id}`, {
-      method: 'DELETE'
-    })
-    const data = await res.json()
-
-    if (data.success) {
-      ElMessage.success('删除成功')
-      fetchConfigs()
-    } else {
-      ElMessage.error(data.message || '删除失败')
-    }
+    await api.delete(`/ai-configs/${config.id}`)
+    ElMessage.success('删除成功')
+    fetchConfigs()
   } catch (e) {
-    // 用户取消
+    // 用户取消或错误
+    if (e.message) {
+      ElMessage.error(e.message)
+    }
   }
 }
 

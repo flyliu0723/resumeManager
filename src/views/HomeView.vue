@@ -132,11 +132,12 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import PositionNav from '../components/PositionNav.vue'
 import CandidateList from '../components/CandidateList.vue'
 import CandidateDetail from '../components/CandidateDetail.vue'
 import { usePositionStore } from '../stores/position'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { api } from '../utils/api'
 import { Calendar, UploadFilled, Plus, Edit, Check, Delete } from '@element-plus/icons-vue'
 
 const store = usePositionStore()
@@ -282,18 +283,10 @@ const handleParse = async () => {
   
   parsing.value = true
   try {
-    const res = await fetch(`http://localhost:3000/api/resumes/${resumeId}/parse?positionId=${positionId}`, {
-      method: 'POST'
-    })
-    const data = await res.json()
+    await api.post(`/resumes/${resumeId}/parse?positionId=${positionId}`)
+    ElMessage.success('解析已开始，请稍后...')
     
-    if (data.success) {
-      ElMessage.success('解析已开始，请稍后...')
-      
-      await pollResumeDetail(resumeId, 10)
-    } else {
-      ElMessage.error('解析失败: ' + data.message)
-    }
+    await pollResumeDetail(resumeId, 10)
   } catch (error) {
     ElMessage.error('解析失败: ' + error.message)
   } finally {
@@ -315,18 +308,10 @@ const handleEvaluate = async () => {
   
   evaluating.value = true
   try {
-    const res = await fetch(`http://localhost:3000/api/positions/${positionId}/resumes/${resumeId}/evaluate`, {
-      method: 'POST'
-    })
-    const data = await res.json()
+    await api.post(`/positions/${positionId}/resumes/${resumeId}/evaluate`)
+    ElMessage.success('匹配评估已开始，请稍后...')
     
-    if (data.success) {
-      ElMessage.success('匹配评估已开始，请稍后...')
-      
-      await pollMatchDetail(matchId, 10)
-    } else {
-      ElMessage.error('评估失败: ' + data.message)
-    }
+    await pollMatchDetail(matchId, 10)
   } catch (error) {
     ElMessage.error('评估失败: ' + error.message)
   } finally {
