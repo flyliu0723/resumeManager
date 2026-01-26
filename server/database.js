@@ -80,6 +80,7 @@ async function initDatabase() {
         size TEXT,
         type TEXT,
         file_path TEXT,
+        file_format TEXT,
         candidate_name TEXT,
         content TEXT,
         parsed_data TEXT,
@@ -90,6 +91,24 @@ async function initDatabase() {
       )
     `)
     console.log('创建 resumes 表')
+  } else {
+    // 检查并添加 file_format 字段
+    const columnCheck = db.exec("PRAGMA table_info(resumes)")
+    const columns = columnCheck.length > 0 ? columnCheck[0].values.map(row => row[1]) : []
+    
+    if (!columns.includes('file_format')) {
+      db.run('ALTER TABLE resumes ADD COLUMN file_format TEXT')
+      console.log('添加 file_format 字段到 resumes 表')
+      
+      // 为现有记录根据文件名推断格式
+      const existingResumes = all('SELECT id, name FROM resumes')
+      for (const resume of existingResumes) {
+        const ext = resume.name.split('.').pop().toLowerCase()
+        const format = ext === 'pdf' ? 'PDF' : ext === 'docx' ? 'DOCX' : ext === 'doc' ? 'DOC' : 'OTHER'
+        run('UPDATE resumes SET file_format = ? WHERE id = ?', [format, resume.id])
+      }
+      console.log('更新现有记录的 file_format')
+    }
   }
 
   // 简历-职位匹配表（一个简历可匹配多个职位）
@@ -149,7 +168,7 @@ async function initDatabase() {
 
     // 添加默认配置 - 使用智谱GLM
     db.run(`INSERT INTO ai_configs (name, provider, api_url, model, is_active, priority) VALUES (?, ?, ?, ?, ?, ?)`,
-      ['智谱GLM-4', 'zhipu', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4', 1, 0])
+      ['智谱GLM-4.7', 'zhipu', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4.7', 1, 0])
     console.log('添加默认智谱GLM配置')
   }
   
@@ -264,16 +283,17 @@ const positionNoteStmt = {
 }
 
 const resumeStmt = {
-  insert: (name, size, type, file_path, candidate_name, content) => {
+  insert: (name, size, type, file_path, file_format, candidate_name, content) => {
     console.log('\n========== 数据库插入简历 ==========')
     console.log('name:', name)
     console.log('size:', size)
     console.log('type:', type)
     console.log('file_path:', file_path)
+    console.log('file_format:', file_format)
     console.log('candidate_name:', candidate_name)
     
-    const result = db.run('INSERT INTO resumes (name, size, type, file_path, candidate_name, content) VALUES (?, ?, ?, ?, ?, ?)', 
-      [String(name), String(size), String(type), String(file_path), String(candidate_name), String(content || '')])
+    const result = db.run('INSERT INTO resumes (name, size, type, file_path, file_format, candidate_name, content) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+      [String(name), String(size), String(type), String(file_path), String(file_format), String(candidate_name), String(content || '')])
     
     let lastId = lastInsertRowid()
     console.log('lastInsertRowid:', lastId)
@@ -424,7 +444,7 @@ const aiConfigStmt = {
       const response = axios.post(
         `${apiUrl}/chat/completions`,
         {
-          model: config.model || (config.provider === 'zhipu' ? 'glm-4' : 'gpt-3.5-turbo'),
+          model: config.model || (config.provider === 'zhipu' ? 'glm-4.7' : 'gpt-3.5-turbo'),
           messages: [{ role: 'user', content: 'Hi' }],
           max_tokens: 5
         },

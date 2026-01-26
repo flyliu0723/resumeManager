@@ -17,8 +17,10 @@ async function extractTextFromFile(filePath) {
 
   if (ext === '.pdf' || isPdfByContent(filePath)) {
     return await extractTextFromPDF(filePath)
-  } else if (ext === '.docx' || ext === '.doc') {
+  } else if (ext === '.docx') {
     return await extractTextFromDocx(filePath)
+  } else if (ext === '.doc') {
+    return await extractTextFromDoc(filePath)
   } else {
     return extractTextFromText(filePath)
   }
@@ -167,26 +169,77 @@ async function extractTextFromDocx(filePath) {
       return ''
     }
 
+    const stats = fs.statSync(filePath)
+    console.log(`DOCX文件大小: ${stats.size} bytes`)
+
     const mammoth = require('mammoth')
     const result = await mammoth.extractRawText({ path: filePath })
 
     let text = result.value || ''
+    console.log(`mammoth提取文本长度: ${text.length} 字符`)
 
     if (!text || text.trim().length === 0) {
-      console.warn('mammoth提取为空，尝试直接读取...')
+      console.warn('mammoth提取为空，尝试直接读取XML...')
       text = await extractDocxFromXML(filePath)
+      console.log(`XML提取文本长度: ${text.length} 字符`)
     }
 
+    // 更好的文本清理
     const cleanText = text
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '')
       .replace(/[ \t]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
+      .replace(/\s+/g, ' ')
       .trim()
 
+    console.log(`最终DOCX文本长度: ${cleanText.length} 字符`)
     return cleanText
   } catch (error) {
     console.error('DOCX解析错误:', error.message)
+    // 尝试XML解析作为fallback
+    try {
+      console.log('尝试XML解析作为fallback...')
+      return await extractDocxFromXML(filePath)
+    } catch (fallbackError) {
+      console.error('XML fallback也失败:', fallbackError.message)
+      return ''
+    }
+  }
+}
+
+async function extractTextFromDoc(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      console.error('DOC文件不存在:', filePath)
+      return ''
+    }
+
+    // .doc文件是二进制格式，需要特殊处理
+    // 这里尝试使用antiword或类似工具，如果不可用则返回错误
+    console.warn('DOC格式支持有限，建议转换为DOCX格式')
+    
+    // 尝试使用antiword（如果系统支持）
+    const { exec } = require('child_process')
+    const util = require('util')
+    const execAsync = util.promisify(exec)
+    
+    try {
+      const { stdout } = await execAsync(`antiword "${filePath}"`)
+      const text = stdout.trim()
+      if (text && text.length > 10) {
+        console.log(`antiword提取DOC文本长度: ${text.length} 字符`)
+        return text
+      }
+    } catch (antiwordError) {
+      console.warn('antiword不可用或失败:', antiwordError.message)
+    }
+
+    // 如果antiword不可用，尝试其他方法
+    console.error('无法解析DOC文件，请转换为DOCX或PDF格式')
+    return ''
+  } catch (error) {
+    console.error('DOC解析错误:', error.message)
     return ''
   }
 }
@@ -246,5 +299,6 @@ module.exports = {
   extractTextFromFile,
   extractTextFromPDF,
   extractTextFromDocx,
+  extractTextFromDoc,
   extractTextFromText
 }

@@ -98,38 +98,59 @@ const positionResumeController = {
   },
 
   create: (req, res) => {
-    let positionId = req.params.positionId
-    let recordFileName = ''
-    let size = 0
-    let type = ''
-    let filePath = ''
-    let tempFilePath = ''
-    
-    const bb = busboy({ headers: req.headers, defParamCharset: 'utf8' })
-    
-    bb.on('file', (name, file, info) => {
-      type = info.mimeType
-      recordFileName = info.filename || 'unknown'
+    try {
+      console.log('\n========== 开始处理文件上传 ==========')
+      console.log('请求头:', JSON.stringify(req.headers, null, 2))
+      console.log('Position ID:', req.params.positionId)
+      
+      let positionId = req.params.positionId
+      let recordFileName = ''
+      let size = 0
+      let type = ''
+      let filePath = ''
+      let tempFilePath = ''
+      
+      const bb = busboy({ 
+        headers: req.headers, 
+        defParamCharset: 'utf8',
+        limits: {
+          fileSize: 50 * 1024 * 1024 // 50MB limit
+        }
+      })
+      
+      bb.on('file', (name, file, info) => {
+        console.log('接收到文件:', { name, filename: info.filename, mimeType: info.mimeType })
+        
+        type = info.mimeType
+        recordFileName = info.filename || 'unknown'
 
-      const timestamp = Date.now()
-      const originalName = info.filename || 'file'
-      const ext = path.extname(originalName)
-      const baseName = path.basename(originalName, ext)
+        const timestamp = Date.now()
+        const originalName = info.filename || 'file'
+        const ext = path.extname(originalName)
+        const baseName = path.basename(originalName, ext)
 
-      const fileName = `${timestamp}_${baseName}${ext}`
-      filePath = path.join(UPLOAD_DIR, fileName)
-      tempFilePath = filePath + '.tmp'
-      const writeStream = fs.createWriteStream(tempFilePath)
+        const fileName = `${timestamp}_${baseName}${ext}`
+        filePath = path.join(UPLOAD_DIR, fileName)
+        tempFilePath = filePath + '.tmp'
+        const writeStream = fs.createWriteStream(tempFilePath)
 
-      file.on('data', (data) => {
-        writeStream.write(data)
-        size += data.length
+        file.on('data', (data) => {
+          writeStream.write(data)
+          size += data.length
+        })
+
+        file.on('end', () => writeStream.end())
+        
+        file.on('error', (err) => {
+          console.error('文件流错误:', err)
+        })
+      })
+      
+      bb.on('field', (name, val, info) => {
+        console.log('接收到字段:', { name, value: val, info })
       })
 
-      file.on('end', () => writeStream.end())
-    })
-
-    bb.on('close', async () => {
+      bb.on('close', async () => {
       try {
         if (!recordFileName) {
           return error(res, '没有上传文件', 400)
@@ -154,6 +175,10 @@ const positionResumeController = {
 
         const result = await parserFactory.parse(filePath, recordFileName, positionId)
         
+        // 获取文件格式
+        const ext = path.extname(recordFileName).toLowerCase()
+        const fileFormat = ext === '.pdf' ? 'PDF' : ext === '.docx' ? 'DOCX' : ext === '.doc' ? 'DOC' : 'OTHER'
+        
         const parsedData = JSON.stringify({
           name: result.candidateName,
           email: result.structuredData?.email,
@@ -172,6 +197,7 @@ const positionResumeController = {
           String(size),
           String(type || ''),
           String(filePath),
+          String(fileFormat),
           String(result.candidateName || '未知'),
           String(result.content || '')
         )
@@ -208,33 +234,17 @@ const positionResumeController = {
       }
     })
 
+    bb.on('error', (err) => {
+      console.error('Busboy错误:', err)
+      error(res, '文件上传处理失败: ' + err.message, 500)
+    })
+    
     req.pipe(bb)
-  },
-
-  evaluate: (req, res) => {
-    try {
-      const { positionId, resumeId } = req.params
-      
-      const position = positionStmt.getById(positionId)
-      if (!position) return error(res, '职位不存在', 404)
-      
-      const resume = resumeStmt.getById(resumeId)
-      if (!resume) return error(res, '简历不存在', 404)
-      
-      let match = positionResumeStmt.getByResumeAndPosition(resumeId, positionId)
-      if (!match) {
-        const insertResult = positionResumeStmt.insert(resumeId, positionId)
-        match = positionResumeStmt.getById(insertResult.lastInsertRowid)
-      }
-
-      setTimeout(() => {
-        runEvaluation(match.id, resumeId, positionId, resume.content, resume.parsed_data || '{}')
-      }, 100)
-
-      success(res, { matchId: match.id }, '评估已开始，请稍后刷新查看结果')
-    } catch (err) {
-      error(res, err.message)
-    }
+    
+  } catch (err) {
+    console.error('上传处理错误:', err)
+    error(res, err.message, 500)
+  }
   },
 
   updateStatus: (req, res) => {

@@ -5,12 +5,32 @@ export function useMessage() {
   const warning = (message) => ElMessage.warning(message)
   const error = (message) => ElMessage.error(message)
   const info = (message) => ElMessage.info(message)
+  
+  const showMessage = (type, message) => {
+    switch(type) {
+      case 'success':
+        ElMessage.success(message)
+        break
+      case 'warning':
+        ElMessage.warning(message)
+        break
+      case 'error':
+        ElMessage.error(message)
+        break
+      case 'info':
+        ElMessage.info(message)
+        break
+      default:
+        ElMessage(message)
+    }
+  }
 
   return {
     success,
     warning,
     error,
-    info
+    info,
+    showMessage
   }
 }
 

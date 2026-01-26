@@ -108,7 +108,7 @@ class AIService {
       const response = await axios.post(
         `${apiUrl}/chat/completions`,
         {
-          model: model || 'glm-4',
+          model: model || 'glm-4.7',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 2000
@@ -133,7 +133,7 @@ class AIService {
       const response = await axios.post(
         `${apiUrl}/chat/completions`,
         {
-          model: model || 'glm-4',
+          model: model || 'glm-4.7',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 3000
@@ -158,7 +158,7 @@ class AIService {
       const response = await axios.post(
         `${apiUrl}/chat/completions`,
         {
-          model: model || 'glm-4',
+          model: model || 'glm-4.7',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 3000
@@ -408,7 +408,7 @@ class AIService {
       const response = await axios.post(
         `${apiUrl}/chat/completions`,
         {
-          model: model || 'glm-4',
+          model: model || 'glm-4.7',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
           max_tokens: 4000

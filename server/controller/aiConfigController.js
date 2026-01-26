@@ -115,7 +115,7 @@ const aiConfigController = {
 
     if (provider === 'zhipu') {
       models = [
-        { value: 'glm-4', label: 'GLM-4 (推荐, 较强推理)' },
+        { value: 'glm-4.7', label: 'GLM-4.7 (推荐, 较强推理)' },
         { value: 'glm-4v', label: 'GLM-4V (支持图像)' },
         { value: 'glm-3-turbo', label: 'GLM-3 Turbo (快速, 便宜)' }
       ]

@@ -19,7 +19,10 @@ async function request(url, options = {}) {
     ...options
   }
 
-  if (config.body && typeof config.body === 'object') {
+  // 如果body是FormData，不要设置Content-Type，让浏览器自动设置
+  if (config.body && config.body instanceof FormData) {
+    delete config.headers['Content-Type']
+  } else if (config.body && typeof config.body === 'object') {
     config.body = JSON.stringify(config.body)
   }
 

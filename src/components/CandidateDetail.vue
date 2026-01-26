@@ -71,49 +71,51 @@
           </el-alert>
         </div>
 
-        <div class="match-score-section" v-if="candidate.match_score !== null">
-          <div class="match-score-card" :class="getMatchClass(candidate.match_score)">
-            <div class="score-label">匹配度</div>
-            <div class="score-value">{{ candidate.match_score }}</div>
-            <div class="score-level">{{ getMatchLevel(candidate.match_score) }}</div>
+        <div class="match-summary-section" v-if="candidate.match_score !== null || matchReasons.length > 0 || gapAnalysis.length > 0 || uncertainPoints.length > 0">
+          <!-- 弱化的匹配度分值 -->
+          <div class="match-score-compact" v-if="candidate.match_score !== null">
+            <span class="score-text">匹配度: </span>
+            <span class="score-number" :class="getMatchClass(candidate.match_score)">{{ candidate.match_score }}分</span>
+            <span class="score-level-text">({{ getMatchLevel(candidate.match_score) }})</span>
+          </div>
+          
+          <!-- 突出的分析卡片 -->
+          <div class="analysis-cards-compact">
+            <div class="analysis-card-compact match-card-compact" v-if="matchReasons.length > 0">
+              <div class="card-header-compact">
+                <el-icon><CircleCheck /></el-icon>
+                <span>匹配点 ({{ matchReasons.length }})</span>
+              </div>
+              <ul class="card-list-compact">
+                <li v-for="(reason, index) in matchReasons" :key="index">{{ reason }}</li>
+              </ul>
+            </div>
+
+            <div class="analysis-card-compact uncertain-card-compact" v-if="uncertainPoints.length > 0">
+              <div class="card-header-compact">
+                <el-icon><QuestionFilled /></el-icon>
+                <span>待确认 ({{ uncertainPoints.length }})</span>
+              </div>
+              <ul class="card-list-compact">
+                <li v-for="(point, index) in uncertainPoints" :key="index">{{ point }}</li>
+              </ul>
+            </div>
+
+            <div class="analysis-card-compact risk-card-compact" v-if="gapAnalysis.length > 0">
+              <div class="card-header-compact">
+                <el-icon><WarningFilled /></el-icon>
+                <span>风险点 ({{ gapAnalysis.length }})</span>
+              </div>
+              <ul class="card-list-compact">
+                <li v-for="(gap, index) in gapAnalysis" :key="index">{{ gap }}</li>
+              </ul>
+            </div>
           </div>
         </div>
 
         <div class="summary-section" v-if="evaluationData.ai_summary">
           <div class="section-label">AI 判断</div>
           <p class="summary-text">{{ evaluationData.ai_summary }}</p>
-        </div>
-
-        <div class="analysis-cards" v-if="matchReasons.length > 0 || gapAnalysis.length > 0 || uncertainPoints.length > 0">
-          <div class="analysis-card match-card" v-if="matchReasons.length > 0">
-            <div class="card-header">
-              <el-icon><CircleCheck /></el-icon>
-              <span>明显匹配点</span>
-            </div>
-            <ul class="card-list">
-              <li v-for="(reason, index) in matchReasons" :key="index">{{ reason }}</li>
-            </ul>
-          </div>
-
-          <div class="analysis-card risk-card" v-if="gapAnalysis.length > 0">
-            <div class="card-header">
-              <el-icon><WarningFilled /></el-icon>
-              <span>明显风险点</span>
-            </div>
-            <ul class="card-list">
-              <li v-for="(gap, index) in gapAnalysis" :key="index">{{ gap }}</li>
-            </ul>
-          </div>
-
-          <div class="analysis-card uncertain-card" v-if="uncertainPoints.length > 0">
-            <div class="card-header">
-              <el-icon><QuestionFilled /></el-icon>
-              <span>不确定点</span>
-            </div>
-            <ul class="card-list">
-              <li v-for="(point, index) in uncertainPoints" :key="index">{{ point }}</li>
-            </ul>
-          </div>
         </div>
 
         <div class="questions-section" v-if="questionsList.length > 0">
@@ -217,6 +219,11 @@
       :positionId="positionId"
       :positionName="positionName"
     />
+
+    <FilePreviewDialog
+      v-model="previewVisible"
+      :file="previewFile"
+    />
   </div>
 </template>
 
@@ -226,6 +233,7 @@ import { Document, Refresh, TrendCharts, Calendar, Warning, CircleCheck, Warning
 import CandidateActionDialog from './CandidateActionDialog.vue'
 import FlowDetailDialog from './FlowDetailDialog.vue'
 import JDExtraDialog from './JDExtraDialog.vue'
+import FilePreviewDialog from './FilePreviewDialog.vue'
 
 const props = defineProps({
   candidate: Object,
@@ -248,6 +256,7 @@ const jdExtraDialogVisible = ref(false)
 
 const viewOriginal = () => {
   if (props.candidate) {
+    console.log('预览文件数据:', props.candidate)
     previewFile.value = props.candidate
     previewVisible.value = true
   }
@@ -463,70 +472,165 @@ const getStatusText = (status) => {
   margin-bottom: 20px;
 }
 
-.match-score-section {
+.match-summary-section {
+  margin-bottom: 20px;
+}
+
+/* 弱化的匹配度显示 */
+.match-score-compact {
   display: flex;
-  justify-content: center;
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #409eff;
 }
 
-.match-score-card {
-  text-align: center;
-  padding: 24px 48px;
-  border-radius: 12px;
-  min-width: 140px;
-}
-
-.match-score-card.match-high {
-  background: linear-gradient(135deg, #f0f9eb 0%, #e1f3d8 100%);
-  border: 1px solid #c2e7b0;
-}
-
-.match-score-card.match-medium {
-  background: linear-gradient(135deg, #fdf6ec 0%, #faecd8 100%);
-  border: 1px solid #f5dab1;
-}
-
-.match-score-card.match-low {
-  background: linear-gradient(135deg, #fef0f0 0%, #fde2e2 100%);
-  border: 1px solid #fbc4c4;
-}
-
-.match-score-card.match-none {
-  background: #f4f4f5;
-  border: 1px solid #dcdfe6;
-}
-
-.score-label {
+.score-text {
   font-size: 13px;
   color: #909399;
-  margin-bottom: 8px;
 }
 
-.score-value {
-  font-size: 48px;
-  font-weight: 700;
-  line-height: 1;
-  margin-bottom: 8px;
+.score-number {
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.match-high .score-value { color: #67c23a; }
-.match-medium .score-value { color: #e6a23c; }
-.match-low .score-value { color: #f56c6c; }
-.match-none .score-value { color: #909399; }
+.score-number.match-high { color: #67c23a; }
+.score-number.match-medium { color: #e6a23c; }
+.score-number.match-low { color: #f56c6c; }
+.score-number.match-none { color: #909399; }
 
-.score-level {
-  font-size: 16px;
+.score-level-text {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 突出的分析卡片 */
+.analysis-cards-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.analysis-card-compact {
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid transparent;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.analysis-card-compact:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.analysis-card-compact .card-header-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.analysis-card-compact .card-list-compact {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.analysis-card-compact .card-list-compact li {
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  padding-left: 12px;
+  position: relative;
+}
+
+.analysis-card-compact .card-list-compact li:before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  font-weight: bold;
+}
+
+/* 匹配点卡片 - 绿色主题 */
+.match-card-compact {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f7e8 100%);
+  border: 1px solid #b7eb8f;
+}
+
+.match-card-compact .card-header-compact {
+  color: #389e0d;
+  border-bottom-color: rgba(56, 158, 13, 0.1);
+}
+
+.match-card-compact .card-list-compact li:before {
+  color: #52c41a;
+}
+
+/* 待确认点卡片 - 橙色主题，突出显示 */
+.uncertain-card-compact {
+  background: linear-gradient(135deg, #fff7e6 0%, #fff2d3 100%);
+  border: 1px solid #ffd591;
+  position: relative;
+}
+
+.uncertain-card-compact::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(circle, #faad14 0%, transparent 70%);
+  border-radius: 0 12px 0 12px;
+  opacity: 0.2;
+}
+
+.uncertain-card-compact .card-header-compact {
+  color: #d46b08;
+  border-bottom-color: rgba(212, 107, 8, 0.1);
+  position: relative;
+}
+
+.uncertain-card-compact .card-list-compact li {
   font-weight: 500;
+  padding-left: 16px;
 }
 
-.match-high .score-level { color: #67c23a; }
-.match-medium .score-level { color: #e6a23c; }
-.match-low .score-level { color: #f56c6c; }
-.match-none .score-level { color: #909399; }
+.uncertain-card-compact .card-list-compact li:before {
+  content: "?";
+  color: #faad14;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* 风险点卡片 - 红色主题 */
+.risk-card-compact {
+  background: linear-gradient(135deg, #fff2f0 0%, #ffe7e7 100%);
+  border: 1px solid #ffb3b3;
+}
+
+.risk-card-compact .card-header-compact {
+  color: #cf1322;
+  border-bottom-color: rgba(207, 19, 34, 0.1);
+}
+
+.risk-card-compact .card-list-compact li:before {
+  color: #ff4d4f;
+}
 
 .summary-section {
-  background: #f0f9eb;
-  border: 1px solid #e1f3d8;
+  background: linear-gradient(135deg, #f6ffed 0%, #f0f9e8 100%);
+  border: 1px solid #d3f261;
   border-radius: 8px;
   padding: 16px 20px;
   margin-bottom: 20px;
@@ -535,7 +639,7 @@ const getStatusText = (status) => {
 .section-label {
   font-size: 12px;
   font-weight: 600;
-  color: #67c23a;
+  color: #52c41a;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -547,59 +651,6 @@ const getStatusText = (status) => {
   color: #303133;
   line-height: 1.7;
 }
-
-.analysis-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.analysis-card {
-  border-radius: 8px;
-  padding: 14px 18px;
-}
-
-.analysis-card .card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.analysis-card .card-list {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.analysis-card .card-list li {
-  font-size: 13px;
-  line-height: 1.7;
-  margin-bottom: 6px;
-}
-
-.match-card {
-  background: #f0f9eb;
-  border: 1px solid #e1f3d8;
-}
-
-.match-card .card-header { color: #67c23a; }
-
-.risk-card {
-  background: #fef0f0;
-  border: 1px solid #fde2e2;
-}
-
-.risk-card .card-header { color: #f56c6c; }
-
-.uncertain-card {
-  background: #fdf6ec;
-  border: 1px solid #faecd8;
-}
-
-.uncertain-card .card-header { color: #e6a23c; }
 
 .questions-section {
   margin-bottom: 20px;
@@ -690,5 +741,41 @@ const getStatusText = (status) => {
   gap: 8px;
   font-size: 13px;
   color: #f56c6c;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .match-score-compact {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .analysis-cards-compact {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .analysis-card-compact {
+    padding: 14px 16px;
+  }
+  
+  .analysis-card-compact .card-header-compact {
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  
+  .analysis-card-compact .card-list-compact li {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  
+  .summary-section {
+    padding: 14px 16px;
+  }
+  
+  .summary-text {
+    font-size: 13px;
+  }
 }
 </style>
