@@ -26,8 +26,14 @@ const flowLogController = {
       
       const currentStatus = match.current_status || match.status || ''
       
+      // 如果切换到待面试状态且没有流程开始时间，则记录流程开始时间
+      let updateFlowStartAt = false
+      if (toStatus === '待面试' && !match.flow_start_at) {
+        updateFlowStartAt = true
+      }
+      
       flowLogStmt.insert(matchId, currentStatus, toStatus, note, jdSupplement)
-      positionResumeStmt.updateStatus(matchId, toStatus, note, jdSupplement)
+      positionResumeStmt.updateStatus(matchId, toStatus, note, jdSupplement, updateFlowStartAt)
       
       const updatedMatch = positionResumeStmt.getById(matchId)
       const newLogs = flowLogStmt.getByMatchId(matchId)

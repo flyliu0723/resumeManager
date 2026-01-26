@@ -123,13 +123,46 @@ async function initDatabase() {
         match_score INTEGER,
         questions TEXT,
         status TEXT DEFAULT '待沟通',
+        current_status TEXT DEFAULT '待沟通',
         matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        flow_start_at DATETIME,
         FOREIGN KEY (resume_id) REFERENCES resumes(id),
         FOREIGN KEY (position_id) REFERENCES positions(id),
         UNIQUE(resume_id, position_id)
       )
     `)
     console.log('创建 position_resumes 表')
+  } else {
+    // 检查并添加 current_status 和 flow_start_at 字段
+    const columnCheck = db.exec("PRAGMA table_info(position_resumes)")
+    const columns = columnCheck.length > 0 ? columnCheck[0].values.map(row => row[1]) : []
+    
+    if (!columns.includes('current_status')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN current_status TEXT DEFAULT "待沟通"')
+      console.log('添加 current_status 字段到 position_resumes 表')
+    }
+    if (!columns.includes('flow_start_at')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN flow_start_at DATETIME')
+      console.log('添加 flow_start_at 字段到 position_resumes 表')
+    }
+  }
+
+  // 流程日志表
+  const flowLogTableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='position_resume_flow_logs'")
+  if (flowLogTableCheck.length === 0) {
+    db.run(`
+      CREATE TABLE position_resume_flow_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        note TEXT,
+        jd_supplement TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (match_id) REFERENCES position_resumes(id)
+      )
+    `)
+    console.log('创建 position_resume_flow_logs 表')
   }
 
   // 职位补充信息表
@@ -326,6 +359,12 @@ const positionResumeStmt = {
     saveDatabase()
     return { lastInsertRowid: lastId }
   },
+  all: (sql, params = []) => {
+    return all(sql, params)
+  },
+  get: (sql, params = []) => {
+    return get(sql, params)
+  },
   getByPosition: (positionId) => {
     return all(`
       SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type
@@ -347,9 +386,16 @@ const positionResumeStmt = {
     const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
     run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
   },
-  updateStatus: (id, status, note, jdSupplement) => {
-    const sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ? WHERE id = ?'
-    run(sql, [String(status), String(status), String(jdSupplement || ''), Number(id)])
+  updateStatus: (id, status, note, jdSupplement, updateFlowStartAt = false) => {
+    let sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ?'
+    const params = [String(status), String(status), String(jdSupplement || ''), Number(id)]
+    
+    if (updateFlowStartAt) {
+      sql += ', flow_start_at = CURRENT_TIMESTAMP'
+    }
+    
+    sql += ' WHERE id = ?'
+    run(sql, params)
   },
   updateJdSupplement: (id, jdSupplement) => {
     run('UPDATE position_resumes SET jd_supplement = ? WHERE id = ?', [String(jdSupplement || ''), Number(id)])
