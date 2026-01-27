@@ -55,7 +55,7 @@ export const usePositionStore = defineStore('position', () => {
       
       const index = archivedPositions.value.findIndex(p => p.id === Number(id))
       if (index > -1) {
-        const [restored] = archivedPositions.value.splice(index, 1)
+      const [restored] = archivedPositions.value.splice(index, 1)
         restored.status = 'active'
         restored.archive_reason = null
         restored.archived_at = null
@@ -132,8 +132,8 @@ export const usePositionStore = defineStore('position', () => {
       }
       if (!matches.value[newPosition.id]) {
         matches.value[newPosition.id] = []
-      }
-      return newPosition.id
+  }
+return newPosition.id
     } catch (error) {
       console.error('添加职位失败:', error)
       return null

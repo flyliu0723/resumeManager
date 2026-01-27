@@ -80,6 +80,8 @@ const statusOptions = [
   { value: '待沟通', label: '待沟通' },
   { value: '待面试', label: '待面试' },
   { value: '面试中', label: '面试中' },
+  { value: '谈薪中', label: '谈薪中' },
+  { value: '已成单', label: '已成单' },
   { value: '已通过', label: '已通过' },
   { value: '已拒绝', label: '已拒绝' }
 ]
@@ -91,8 +93,10 @@ const rules = {
 const getStatusType = (status) => {
   const types = {
     '待沟通': 'warning',
-    '待面试': 'success',
+    '待面试': 'info',
     '面试中': 'success',
+    '谈薪中': 'success',
+    '已成单': 'success',
     '已通过': 'success',
     '已拒绝': 'danger'
   }
@@ -104,6 +108,8 @@ const getStatusText = (status) => {
     '待沟通': '待沟通',
     '待面试': '待面试',
     '面试中': '面试中',
+    '谈薪中': '谈薪中',
+    '已成单': '已成单',
     '已通过': '已通过',
     '已拒绝': '已拒绝'
   }

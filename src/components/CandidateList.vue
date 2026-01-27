@@ -130,8 +130,8 @@ const emit = defineEmits(['select', 'upload', 'view-jd'])
 
 const activeNames = ref(['pending', 'finished'])
 
-const pendingStatuses = ['待沟通', '待面试', '面试中', '已解析', '未解析']
-const finishedStatuses = ['已通过', '已拒绝']
+const pendingStatuses = ['待沟通', '待面试', '面试中', '谈薪中', '已解析', '未解析']
+const finishedStatuses = ['已成单', '已通过', '已拒绝']
 
 const pendingCandidates = computed(() => {
   return props.candidates.filter(c => pendingStatuses.includes(c.status))
@@ -151,6 +151,8 @@ const getAvatarColor = (status) => {
     '待沟通': 'linear-gradient(135deg, #e6a23c 0%, #f5a623 100%)',
     '待面试': 'linear-gradient(135deg, #409eff 0%, #67c4ff 100%)',
     '面试中': 'linear-gradient(135deg, #67c23a 0%, #85ce61 100%)',
+    '谈薪中': 'linear-gradient(135deg, #fa8c16 0%, #fda23f 100%)',
+    '已成单': 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
     '已通过': 'linear-gradient(135deg, #67c23a 0%, #95d475 100%)',
     '已拒绝': 'linear-gradient(135deg, #f56c6c 0%, #f89898 100%)',
     '未解析': 'linear-gradient(135deg, #909399 0%, #b4b4b8 100%)',

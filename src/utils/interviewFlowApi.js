@@ -15,5 +15,13 @@ export const interviewFlowApi = {
 
   getTimeline: (params = {}) => {
     return api.get('/interview-flow/timeline', params)
+  },
+
+  getDashboardStats: (params = {}) => {
+    return api.get('/interview-flow/dashboard-stats', params)
+  },
+
+  getCandidatesByStatus: (params = {}) => {
+    return api.get('/interview-flow/candidates-by-status', params)
   }
 }

@@ -21,16 +21,16 @@ const interviewFlowController = {
       
       const params = []
       
-      if (positionId) {
+      if (positionId !== undefined && positionId !== 'all') {
         sql += ' AND pr.position_id = ?'
         params.push(Number(positionId))
       }
       
       if (status && status !== 'all') {
         if (status === 'ongoing') {
-          sql += " AND pr.current_status IN ('待沟通', '待面试', '面试中')"
+          sql += " AND pr.current_status IN ('待沟通', '待面试', '面试中', '谈薪中')"
         } else if (status === 'completed') {
-          sql += " AND pr.current_status = '已通过'"
+          sql += " AND pr.current_status IN ('已通过', '已成单')"
         } else if (status === 'rejected') {
           sql += " AND pr.current_status = '已拒绝'"
         }
@@ -106,7 +106,7 @@ const interviewFlowController = {
       let sql = `
         SELECT 
           COUNT(DISTINCT pr.id) as total,
-          SUM(CASE WHEN pr.current_status IN ('待沟通', '待面试', '面试中') THEN 1 ELSE 0 END) as active,
+          SUM(CASE WHEN pr.current_status IN ('待沟通', '待面试', '面试中', '谈薪中') THEN 1 ELSE 0 END) as active,
           AVG(CASE 
             WHEN pr.flow_start_at IS NOT NULL THEN 
               (julianday('now') - julianday(pr.flow_start_at))
@@ -120,7 +120,7 @@ const interviewFlowController = {
       
       const params = []
       
-      if (positionId) {
+      if (positionId !== undefined && positionId !== 'all') {
         sql += ' AND pr.position_id = ?'
         params.push(Number(positionId))
       }
@@ -168,7 +168,7 @@ const interviewFlowController = {
       
       const params = []
       
-      if (positionId) {
+      if (positionId !== undefined && positionId !== 'all') {
         sql += ' AND pr.position_id = ?'
         params.push(Number(positionId))
       }
@@ -215,7 +215,7 @@ const interviewFlowController = {
       
       const params = []
       
-      if (positionId) {
+      if (positionId !== undefined && positionId !== 'all') {
         sql += ' AND pr.position_id = ?'
         params.push(Number(positionId))
       }
@@ -256,6 +256,100 @@ const interviewFlowController = {
       success(res, timelineEvents)
     } catch (err) {
       console.error('getTimeline 错误:', err)
+      error(res, err.message)
+    }
+  },
+
+  getDashboardStats: (req, res) => {
+    try {
+      const { positionId } = req.query
+      
+      console.log('========== getDashboardStats ==========')
+      console.log('请求参数:', { positionId })
+      
+      let sql = `
+        SELECT 
+          COUNT(CASE WHEN current_status = '待面试' THEN 1 ELSE NULL END) as interviewPending,
+          COUNT(CASE WHEN current_status = '面试中' THEN 1 ELSE NULL END) as interviewing,
+          COUNT(CASE WHEN current_status = '谈薪中' THEN 1 ELSE NULL END) as salaryNegotiation,
+          COUNT(CASE WHEN current_status = '已成单' THEN 1 ELSE NULL END) as completed,
+          COUNT(*) as total
+        FROM position_resumes pr
+        WHERE 1=1
+      `
+      
+      const params = []
+
+      if (positionId !== undefined && positionId !== 'all') {
+        sql += ' AND pr.position_id = ?'
+        params.push(Number(positionId))
+      }
+      
+      console.log('最终 SQL:', sql)
+      console.log('查询参数:', params)
+      
+      const result = positionResumeStmt.get(sql, params)
+      
+      console.log('查询结果:', result)
+      
+      const stats = {
+        interviewPending: result.interviewPending || 0,
+        interviewing: result.interviewing || 0,
+        salaryNegotiation: result.salaryNegotiation || 0,
+        completed: result.completed || 0,
+        total: result.total || 0
+      }
+      
+      console.log('看板统计数据:', stats)
+      console.log('====================================')
+      
+      success(res, stats)
+    } catch (err) {
+      console.error('getDashboardStats 错误:', err)
+      error(res, err.message)
+    }
+  },
+
+  getCandidatesByStatus: (req, res) => {
+    try {
+      const { positionId, status } = req.query
+
+      console.log('========== getCandidatesByStatus ==========')
+      console.log('请求参数:', { positionId, status })
+
+      const validStatuses = ['待面试', '面试中', '谈薪中']
+      if (!status || !validStatuses.includes(status)) {
+        return error(res, '无效的状态参数')
+      }
+
+      let sql = `
+        SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type,
+               p.name as position_name, p.company as position_company
+        FROM position_resumes pr
+        JOIN resumes r ON pr.resume_id = r.id
+        JOIN positions p ON pr.position_id = p.id
+        WHERE pr.current_status = ?
+      `
+
+      const params = [status]
+
+      if (positionId !== undefined && positionId !== 'all') {
+        sql += ' AND pr.position_id = ?'
+        params.push(Number(positionId))
+      }
+
+      sql += ' ORDER BY pr.flow_start_at DESC, pr.matched_at DESC LIMIT 50'
+
+      console.log('最终 SQL:', sql)
+      console.log('查询参数:', params)
+
+      const candidates = positionResumeStmt.all(sql, params)
+
+      console.log('查询到的候选人数量:', candidates.length)
+
+      success(res, candidates)
+    } catch (err) {
+      console.error('getCandidatesByStatus 错误:', err)
       error(res, err.message)
     }
   }
@@ -472,7 +566,9 @@ function getAvatarColor(status) {
     '待沟通': '#e6a23c',
     '待面试': '#409eff',
     '面试中': '#67c23a',
+    '谈薪中': '#fa8c16',
     '已通过': '#67c23a',
+    '已成单': '#52c41a',
     '已拒绝': '#f56c6c',
     '未解析': '#909399',
     '已解析': '#409eff'

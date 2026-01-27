@@ -93,6 +93,19 @@ export function useInterviewFlow() {
     }
   }
 
+  const fetchDashboardStats = async () => {
+    try {
+      const params = {
+        positionId: positionFilter.value === 'all' ? undefined : positionFilter.value
+      }
+      const data = await interviewFlowApi.getDashboardStats(params)
+      return data || {}
+    } catch (error) {
+      console.error('获取看板统计数据失败:', error)
+      return {}
+    }
+  }
+
   const fetchPositions = async () => {
     try {
       const data = await api.get('/positions')
@@ -145,6 +158,7 @@ export function useInterviewFlow() {
     fetchOverview,
     fetchRiskFactors,
     fetchTimeline,
+    fetchDashboardStats,
     fetchPositions,
     fetchAllData,
     getStatusType,

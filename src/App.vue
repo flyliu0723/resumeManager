@@ -24,6 +24,10 @@
           <el-icon><List /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '流程管理' }}</template>
         </el-menu-item>
+        <el-menu-item index="/flow-dashboard">
+          <el-icon><DataAnalysis /></el-icon>
+          <template #title>{{ isSidebarCollapsed ? '' : '流程看板' }}</template>
+        </el-menu-item>
         <el-menu-item index="/config">
           <el-icon><Setting /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : 'AI 配置' }}</template>
@@ -41,7 +45,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { HomeFilled, Setting, List, ArrowLeft, Platform } from '@element-plus/icons-vue'
+import { HomeFilled, Setting, List, ArrowLeft, Platform, DataAnalysis } from '@element-plus/icons-vue'
 
 const isSidebarCollapsed = ref(false)
 
@@ -55,6 +59,7 @@ const toggleSidebar = () => {
   display: flex;
   height: 100vh;
   background: #f5f7fa;
+  overflow: hidden;
 }
 
 .sidebar-container {
@@ -156,6 +161,7 @@ const toggleSidebar = () => {
   margin-left: 0;
   transition: margin-left 0.3s ease;
   overflow: hidden;
+  height: 100vh;
 }
 
 .main-container.collapsed {
