@@ -23,6 +23,18 @@
         </el-select>
       </el-form-item>
 
+      <el-form-item v-if="form.toStatus === '待面试'" label="面试时间">
+        <el-date-picker
+          v-model="form.nextInterviewAt"
+          type="datetime"
+          placeholder="选择面试时间"
+          format="YYYY-MM-DD HH:mm"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          style="width: 100%"
+          :disabled-date="disabledDate"
+        />
+      </el-form-item>
+
       <el-form-item label="备注说明">
         <el-input
           v-model="form.note"
@@ -73,7 +85,8 @@ const submitting = ref(false)
 const form = ref({
   toStatus: '',
   note: '',
-  jdSupplement: ''
+  jdSupplement: '',
+  nextInterviewAt: ''
 })
 
 const statusOptions = [
@@ -87,7 +100,14 @@ const statusOptions = [
 ]
 
 const rules = {
-  toStatus: [{ required: true, message: '请选择状态', trigger: 'change' }]
+  toStatus: [{ required: true, message: '请选择状态', trigger: 'change' }],
+  nextInterviewAt: [
+    { required: true, message: '请选择面试时间', trigger: 'change' }
+  ]
+}
+
+const disabledDate = (time) => {
+  return time.getTime() < Date.now() - 8.64e7
 }
 
 const getStatusType = (status) => {
@@ -121,7 +141,8 @@ watch(visible, (val) => {
     form.value = {
       toStatus: '',
       note: '',
-      jdSupplement: ''
+      jdSupplement: '',
+      nextInterviewAt: ''
     }
   }
 })
@@ -133,13 +154,19 @@ const handleSubmit = async () => {
 
     const fromStatus = props.candidate?.current_status || props.candidate?.status
 
-    const result = await api.post('/flow-logs/match/flow-log', {
+    const params = {
       matchId: props.candidate.id,
       fromStatus,
       toStatus: form.value.toStatus,
       note: form.value.note,
       jdSupplement: form.value.jdSupplement
-    })
+    }
+
+    if (form.value.toStatus === '待面试' && form.value.nextInterviewAt) {
+      params.nextInterviewAt = form.value.nextInterviewAt
+    }
+
+    const result = await api.post('/flow-logs/match/flow-log', params)
 
     emit('success', result)
     visible.value = false

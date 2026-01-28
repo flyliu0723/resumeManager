@@ -142,3 +142,10 @@ A: 修改 `server/index.js` 中的 `PORT` 变量。
 - [MiniMax API文档](https://api.minimax.chat/docs)
 - [DeepSeek API文档](https://platform.deepseek.com/api-docs)
 - [OpenAI API文档](https://platform.openai.com/docs)
+
+
+#D0ED35
+#70D75C
+#46AA8F
+#0A594E
+#FFB003

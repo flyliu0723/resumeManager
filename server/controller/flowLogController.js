@@ -13,7 +13,7 @@ const flowLogController = {
 
   create: (req, res) => {
     try {
-      const { matchId, fromStatus, toStatus, note, jdSupplement } = req.body
+      const { matchId, fromStatus, toStatus, note, jdSupplement, nextInterviewAt } = req.body
       
       if (!matchId || !toStatus) {
         return error(res, '缺少必要参数', 400)
@@ -32,8 +32,11 @@ const flowLogController = {
         updateFlowStartAt = true
       }
       
+      // 如果切换到待面试状态且有面试时间，则更新面试时间
+      const interviewTime = (toStatus === '待面试' && nextInterviewAt) ? nextInterviewAt : null
+      
       flowLogStmt.insert(matchId, currentStatus, toStatus, note, jdSupplement)
-      positionResumeStmt.updateStatus(matchId, toStatus, note, jdSupplement, updateFlowStartAt)
+      positionResumeStmt.updateStatus(matchId, toStatus, note, jdSupplement, updateFlowStartAt, interviewTime)
       
       const updatedMatch = positionResumeStmt.getById(matchId)
       const newLogs = flowLogStmt.getByMatchId(matchId)

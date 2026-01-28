@@ -149,6 +149,10 @@ async function initDatabase() {
       db.run('ALTER TABLE position_resumes ADD COLUMN update_time DATETIME')
       console.log('添加 update_time 字段到 position_resumes 表')
     }
+    if (!columns.includes('next_interview_at')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN next_interview_at DATETIME')
+      console.log('添加 next_interview_at 字段到 position_resumes 表')
+    }
   }
 
   // 流程日志表
@@ -390,12 +394,19 @@ const positionResumeStmt = {
     const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
     run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
   },
-  updateStatus: (id, status, note, jdSupplement, updateFlowStartAt = false) => {
+  updateStatus: (id, status, note, jdSupplement, updateFlowStartAt = false, nextInterviewAt = null) => {
     let sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ?, update_time = CURRENT_TIMESTAMP'
     const params = [String(status), String(status), String(jdSupplement || ''), Number(id)]
     
     if (updateFlowStartAt) {
       sql += ', flow_start_at = CURRENT_TIMESTAMP'
+    }
+    
+    if (nextInterviewAt) {
+      sql += ', next_interview_at = ?'
+      params.splice(params.length - 1, 0, String(nextInterviewAt))
+    } else {
+      sql += ', next_interview_at = NULL'
     }
     
     sql += ' WHERE id = ?'
