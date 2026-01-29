@@ -115,7 +115,7 @@
         drag
         :auto-upload="false"
         :on-change="handleFileChange"
-        :accept="'.pdf,.doc,.docx'"
+        :accept="['.pdf', '.doc', '.docx']"
         :limit="10"
       >
         <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -128,6 +128,27 @@
           </div>
         </template>
       </el-upload>
+      
+      <div class="upload-form" v-if="selectedFile">
+        <el-form label-width="80px">
+          <el-form-item label="简历来源">
+            <el-select v-model="uploadForm.source" placeholder="请选择来源">
+              <el-option label="BOSS直聘" value="boss" />
+              <el-option label="拉勾网" value="lagou" />
+              <el-option label="猎聘网" value="liepin" />
+              <el-option label="猎头推荐" value="recruiter" />
+              <el-option label="其他渠道" value="other" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="uploadForm.note" type="textarea" placeholder="请输入备注信息" :rows="3" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="confirmUpload">确认上传</el-button>
+            <el-button @click="cancelUpload">取消</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -162,6 +183,13 @@ const evaluating = ref(false)
 const newNoteContent = ref('')
 const editingNoteId = ref(null)
 const editingNoteContent = ref('')
+
+// 上传表单数据
+const selectedFile = ref(null)
+const uploadForm = ref({
+  source: 'other',
+  note: ''
+})
 
 const handleSelectCandidate = async (candidate) => {
   selectedCandidate.value = candidate
@@ -253,14 +281,28 @@ const handleFileChange = (file) => {
     return
   }
 
+  // 存储选中的文件
+  selectedFile.value = file
+}
+
+const confirmUpload = () => {
+  if (!selectedFile.value) {
+    ElMessage.error('请先选择文件')
+    return
+  }
+
+  const file = selectedFile.value
   store.addResume(store.currentPositionId, {
     name: file.name,
     size: file.size,
     type: file.raw.type,
-    raw: file.raw
+    raw: file.raw,
+    source: uploadForm.value.source,
+    note: uploadForm.value.note
   }).then(async () => {
     ElMessage.success(`${file.name} 上传成功`)
     showUpload.value = false
+    resetUploadForm()
     
     // 轮询检查评估进度
     if (store.currentPositionId) {
@@ -274,6 +316,19 @@ const handleFileChange = (file) => {
   }).catch((error) => {
     ElMessage.error('上传失败: ' + (error.message || '未知错误'))
   })
+}
+
+const cancelUpload = () => {
+  showUpload.value = false
+  resetUploadForm()
+}
+
+const resetUploadForm = () => {
+  selectedFile.value = null
+  uploadForm.value = {
+    source: 'other',
+    note: ''
+  }
 }
 
 

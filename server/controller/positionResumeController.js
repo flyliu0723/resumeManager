@@ -1,4 +1,4 @@
-const { positionResumeStmt, resumeStmt, positionStmt, aiConfigStmt, positionNoteStmt } = require('../database')
+const { positionResumeStmt, resumeStmt, positionStmt, aiConfigStmt, positionNoteStmt, interviewEventStmt } = require('../database')
 const parserFactory = require('../parser/factory')
 const AIService = require('../aiService')
 const fs = require('fs')
@@ -7,6 +7,8 @@ const busboy = require('busboy')
 const { success, error } = require('../utils/response')
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'files')
+// 用于数据库存储的相对路径前缀
+const DB_PATH_PREFIX = 'uploads/files/'
 
 async function runEvaluation(matchId, resumeId, positionId, resumeContent, parsedDataStr) {
   try {
@@ -109,6 +111,8 @@ const positionResumeController = {
       let type = ''
       let filePath = ''
       let tempFilePath = ''
+      let source = 'other'
+      let note = ''
       
       const bb = busboy({ 
         headers: req.headers, 
@@ -148,6 +152,11 @@ const positionResumeController = {
       
       bb.on('field', (name, val, info) => {
         console.log('接收到字段:', { name, value: val, info })
+        if (name === 'source') {
+          source = val
+        } else if (name === 'note') {
+          note = val
+        }
       })
 
       bb.on('close', async () => {
@@ -174,11 +183,30 @@ const positionResumeController = {
         }
 
         const result = await parserFactory.parse(filePath, recordFileName, positionId)
-        
+
         // 获取文件格式
         const ext = path.extname(recordFileName).toLowerCase()
         const fileFormat = ext === '.pdf' ? 'PDF' : ext === '.docx' ? 'DOCX' : ext === '.doc' ? 'DOC' : 'OTHER'
-        
+
+        // 生成相对路径用于数据库存储
+        const timestamp = Date.now()
+        const originalName = recordFileName || 'file'
+        const fileExt = path.extname(originalName)
+        const baseName = path.basename(originalName, fileExt)
+        const storedFileName = `${timestamp}_${baseName}${fileExt}`
+        const relativeFilePath = DB_PATH_PREFIX + storedFileName
+
+        // 重命名文件为带时间戳的名称
+        const finalFilePath = path.join(UPLOAD_DIR, storedFileName)
+        fs.renameSync(filePath, finalFilePath)
+
+        console.log('文件存储信息:', {
+          originalName: recordFileName,
+          storedFileName: storedFileName,
+          relativePath: relativeFilePath,
+          absolutePath: finalFilePath
+        })
+
         const parsedData = JSON.stringify({
           name: result.candidateName,
           email: result.structuredData?.email,
@@ -196,10 +224,12 @@ const positionResumeController = {
           String(recordFileName),
           String(size),
           String(type || ''),
-          String(filePath),
+          String(relativeFilePath),
           String(fileFormat),
           String(result.candidateName || '未知'),
-          String(result.content || '')
+          String(result.content || ''),
+          String(source || 'other'),
+          String(note || '')
         )
 
         resumeStmt.updateParsedData(
@@ -212,6 +242,23 @@ const positionResumeController = {
         )
 
         const matchResult = positionResumeStmt.insert(insertResult.lastInsertRowid, positionId)
+
+        // 记录简历上传事件
+        try {
+          interviewEventStmt.insert('resume_upload', matchResult.lastInsertRowid, Number(positionId), {
+            stageAfter: '新候选人',
+            details: {
+              resumeId: insertResult.lastInsertRowid,
+              candidateName: result.candidateName || '未知',
+              fileName: recordFileName,
+              fileSize: size,
+              fileFormat: fileFormat
+            }
+          })
+          console.log('记录简历上传事件成功:', { matchId: matchResult.lastInsertRowid, positionId })
+        } catch (eventErr) {
+          console.error('记录简历上传事件失败:', eventErr)
+        }
 
         setTimeout(() => {
           runEvaluation(matchResult.lastInsertRowid, insertResult.lastInsertRowid, positionId, result.content, parsedData)

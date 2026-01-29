@@ -109,6 +109,11 @@ async function initDatabase() {
       }
       console.log('更新现有记录的 file_format')
     }
+    
+    if (!columns.includes('source')) {
+      db.run('ALTER TABLE resumes ADD COLUMN source TEXT DEFAULT "other"')
+      console.log('添加 source 字段到 resumes 表')
+    }
   }
 
   // 简历-职位匹配表（一个简历可匹配多个职位）
@@ -212,7 +217,36 @@ async function initDatabase() {
       ['智谱GLM-4.7', 'zhipu', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4.7', 1, 0])
     console.log('添加默认智谱GLM配置')
   }
-  
+
+  // 面试事件表 - 用于日志埋点和统计分析
+  const interviewEventsTableCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_events'")
+  if (interviewEventsTableCheck.length === 0) {
+    db.run(`
+      CREATE TABLE interview_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        candidate_id INTEGER,
+        position_id INTEGER,
+        event_type TEXT NOT NULL,
+        stage_before TEXT,
+        stage_after TEXT,
+        duration_seconds INTEGER,
+        details TEXT,
+        metric_value REAL,
+        source TEXT DEFAULT 'system',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    console.log('创建 interview_events 表')
+
+    // 创建常用查询索引
+    db.run('CREATE INDEX idx_interview_events_event_time ON interview_events(event_time)')
+    db.run('CREATE INDEX idx_interview_events_event_type ON interview_events(event_type)')
+    db.run('CREATE INDEX idx_interview_events_candidate_id ON interview_events(candidate_id)')
+    db.run('CREATE INDEX idx_interview_events_position_id ON interview_events(position_id)')
+    console.log('创建 interview_events 索引')
+  }
+
   saveDatabase()
   
   return db
@@ -324,7 +358,7 @@ const positionNoteStmt = {
 }
 
 const resumeStmt = {
-  insert: (name, size, type, file_path, file_format, candidate_name, content) => {
+  insert: (name, size, type, file_path, file_format, candidate_name, content, source = 'other', note = '') => {
     console.log('\n========== 数据库插入简历 ==========')
     console.log('name:', name)
     console.log('size:', size)
@@ -332,9 +366,11 @@ const resumeStmt = {
     console.log('file_path:', file_path)
     console.log('file_format:', file_format)
     console.log('candidate_name:', candidate_name)
+    console.log('source:', source)
+    console.log('note:', note)
     
-    const result = db.run('INSERT INTO resumes (name, size, type, file_path, file_format, candidate_name, content) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [String(name), String(size), String(type), String(file_path), String(file_format), String(candidate_name), String(content || '')])
+    const result = db.run('INSERT INTO resumes (name, size, type, file_path, file_format, candidate_name, content, source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+      [String(name), String(size), String(type), String(file_path), String(file_format), String(candidate_name), String(content || ''), String(source), String(note || '')])
     
     let lastId = lastInsertRowid()
     console.log('lastInsertRowid:', lastId)
@@ -367,6 +403,15 @@ const positionResumeStmt = {
     saveDatabase()
     return { lastInsertRowid: lastId }
   },
+  getAll: () => {
+    return all(`
+      SELECT pr.*, r.name as resume_name, r.candidate_name, p.name as position_name
+      FROM position_resumes pr
+      JOIN resumes r ON pr.resume_id = r.id
+      LEFT JOIN positions p ON pr.position_id = p.id
+      ORDER BY pr.matched_at DESC
+    `)
+  },
   all: (sql, params = []) => {
     return all(sql, params)
   },
@@ -375,7 +420,7 @@ const positionResumeStmt = {
   },
   getByPosition: (positionId) => {
     return all(`
-      SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type
+      SELECT pr.*, r.name as resume_name, r.name as file_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type, r.file_format
       FROM position_resumes pr
       JOIN resumes r ON pr.resume_id = r.id
       WHERE pr.position_id = ?
@@ -384,7 +429,7 @@ const positionResumeStmt = {
   },
   getById: (id) => {
     return get(`
-      SELECT pr.*, r.name as resume_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type
+      SELECT pr.*, r.name as resume_name, r.name as file_name, r.candidate_name, r.parsed_data, r.content, r.file_path, r.type, r.file_format
       FROM position_resumes pr
       JOIN resumes r ON pr.resume_id = r.id
       WHERE pr.id = ?
@@ -524,6 +569,194 @@ const aiConfigStmt = {
   }
 }
 
+// 面试事件操作语句
+const interviewEventStmt = {
+  // 插入事件
+  insert: (eventType, candidateId, positionId, options = {}) => {
+    const {
+      eventTime = new Date().toISOString(),
+      stageBefore = null,
+      stageAfter = null,
+      durationSeconds = null,
+      details = null,
+      metricValue = null,
+      source = 'system'
+    } = options
+
+    const detailsJson = details ? JSON.stringify(details) : null
+
+    const result = db.run(
+      `INSERT INTO interview_events 
+       (event_time, candidate_id, position_id, event_type, stage_before, stage_after, duration_seconds, details, metric_value, source) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        String(eventTime),
+        candidateId ? Number(candidateId) : null,
+        positionId ? Number(positionId) : null,
+        String(eventType),
+        stageBefore ? String(stageBefore) : null,
+        stageAfter ? String(stageAfter) : null,
+        durationSeconds ? Number(durationSeconds) : null,
+        detailsJson,
+        metricValue ? Number(metricValue) : null,
+        String(source)
+      ]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+
+  // 根据ID查询
+  getById: (id) => {
+    return get(`SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.id = ?`, [Number(id)])
+  },
+
+  // 查询候选人的所有事件
+  getByCandidateId: (candidateId, limit = 100) => {
+    return all(`SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.candidate_id = ? 
+      ORDER BY ie.event_time DESC 
+      LIMIT ?`,
+      [Number(candidateId), Number(limit)])
+  },
+
+  // 查询职位的所有事件
+  getByPositionId: (positionId, limit = 100) => {
+    return all(`SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.position_id = ? 
+      ORDER BY ie.event_time DESC 
+      LIMIT ?`,
+      [Number(positionId), Number(limit)])
+  },
+
+  // 按事件类型查询
+  getByEventType: (eventType, startTime, endTime, limit = 100) => {
+    let sql = `SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.event_type = ?`
+    const params = [String(eventType)]
+
+    if (startTime) {
+      sql += ' AND ie.event_time >= ?'
+      params.push(String(startTime))
+    }
+    if (endTime) {
+      sql += ' AND ie.event_time <= ?'
+      params.push(String(endTime))
+    }
+
+    sql += ' ORDER BY ie.event_time DESC LIMIT ?'
+    params.push(Number(limit))
+
+    return all(sql, params)
+  },
+
+  // 查询时间范围内的事件（用于统计）
+  getByTimeRange: (startTime, endTime, eventType = null) => {
+    let sql = `SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.event_time >= ? AND ie.event_time <= ?`
+    const params = [String(startTime), String(endTime)]
+
+    if (eventType) {
+      sql += ' AND ie.event_type = ?'
+      params.push(String(eventType))
+    }
+
+    sql += ' ORDER BY ie.event_time DESC'
+    return all(sql, params)
+  },
+
+  // 按天统计事件数量
+  getDailyStats: (startTime, endTime, eventType = null) => {
+    let sql = `
+      SELECT 
+        date(event_time) as date,
+        COUNT(*) as count
+      FROM interview_events 
+      WHERE event_time >= ? AND event_time <= ?`
+    const params = [String(startTime), String(endTime)]
+
+    if (eventType) {
+      sql += ' AND event_type = ?'
+      params.push(String(eventType))
+    }
+
+    sql += ' GROUP BY date(event_time) ORDER BY date'
+    return all(sql, params)
+  },
+
+  // 统计各类型事件数量
+  getEventTypeStats: (startTime, endTime) => {
+    return all(
+      `SELECT 
+        event_type,
+        COUNT(*) as count
+      FROM interview_events 
+      WHERE event_time >= ? AND event_time <= ?
+      GROUP BY event_type
+      ORDER BY count DESC`,
+      [String(startTime), String(endTime)]
+    )
+  },
+
+  // 按日期范围查询事件
+  getByDateRange: (startTime, endTime) => {
+    return all(
+      `SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      WHERE ie.event_time >= ? AND ie.event_time <= ?
+      ORDER BY ie.event_time DESC`,
+      [String(startTime), String(endTime)]
+    )
+  },
+
+  // 获取所有事件
+  getAll: () => {
+    return all(
+      `SELECT 
+        ie.*,
+        p.name as position_name
+      FROM interview_events ie
+      LEFT JOIN positions p ON ie.position_id = p.id
+      ORDER BY ie.event_time DESC
+      LIMIT 1000`
+    )
+  },
+
+  // 删除事件
+  delete: (id) => {
+    return run('DELETE FROM interview_events WHERE id = ?', [Number(id)])
+  },
+
+  // 删除候选人的所有事件
+  deleteByCandidateId: (candidateId) => {
+    return run('DELETE FROM interview_events WHERE candidate_id = ?', [Number(candidateId)])
+  }
+}
+
 module.exports = {
   initDatabase,
   positionStmt,
@@ -532,5 +765,7 @@ module.exports = {
   resumeStmt,
   positionResumeStmt,
   flowLogStmt,
-  aiConfigStmt
+  aiConfigStmt,
+  interviewEventStmt,
+  db
 }

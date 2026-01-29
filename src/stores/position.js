@@ -210,6 +210,8 @@ return newPosition.id
       formData.append('size', String(resume.size))
       formData.append('type', resume.type)
       formData.append('file', resume.raw)
+      formData.append('source', resume.source || 'other')
+      formData.append('note', resume.note || '')
 
       const newMatch = await api.upload(`/positions/${positionId}/resumes`, formData)
       

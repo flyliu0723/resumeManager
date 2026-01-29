@@ -20,13 +20,21 @@
           <el-icon><HomeFilled /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '简历管理' }}</template>
         </el-menu-item>
-        <el-menu-item index="/interview-flow">
+        <el-menu-item index="/dashboard">
+          <el-icon><DataAnalysis /></el-icon>
+          <template #title>{{ isSidebarCollapsed ? '' : '招聘看板' }}</template>
+        </el-menu-item>
+        <!-- <el-menu-item index="/interview-flow">
           <el-icon><List /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '流程管理' }}</template>
-        </el-menu-item>
+        </el-menu-item> -->
         <el-menu-item index="/flow-dashboard">
           <el-icon><DataAnalysis /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '流程看板' }}</template>
+        </el-menu-item>
+        <el-menu-item index="/interviews">
+          <el-icon><Document /></el-icon>
+          <template #title>{{ isSidebarCollapsed ? '' : '面试事件' }}</template>
         </el-menu-item>
         <el-menu-item index="/config">
           <el-icon><Setting /></el-icon>
@@ -45,7 +53,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { HomeFilled, Setting, List, ArrowLeft, Platform, DataAnalysis } from '@element-plus/icons-vue'
+import { HomeFilled, Setting, List, ArrowLeft, Platform, DataAnalysis, Document } from '@element-plus/icons-vue'
 
 const isSidebarCollapsed = ref(false)
 

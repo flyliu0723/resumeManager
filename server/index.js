@@ -19,40 +19,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 app.use('/api', router)
 
-app.get('/api/resumes/:id/preview', (req, res) => {
-  const { resumeStmt } = require('./database')
-  try {
-    const resume = resumeStmt.getById(req.params.id)
-    if (resume && resume.file_path && fs.existsSync(resume.file_path)) {
-      const fileName = encodeURIComponent(resume.name)
-      res.setHeader('Content-Type', resume.type || 'application/octet-stream')
-      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`)
-      res.sendFile(path.resolve(resume.file_path))
-    } else {
-      res.status(404).json({ code: 404, success: false, message: '简历文件不存在' })
-    }
-  } catch (error) {
-    res.status(500).json({ code: 500, success: false, message: error.message })
-  }
-})
-
-app.get('/api/resumes/:id/download', (req, res) => {
-  const { resumeStmt } = require('./database')
-  try {
-    const resume = resumeStmt.getById(req.params.id)
-    if (resume && resume.file_path && fs.existsSync(resume.file_path)) {
-      const fileName = encodeURIComponent(resume.name)
-      res.setHeader('Content-Type', resume.type || 'application/octet-stream')
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
-      res.sendFile(path.resolve(resume.file_path))
-    } else {
-      res.status(404).json({ code: 404, success: false, message: '简历文件不存在' })
-    }
-  } catch (error) {
-    res.status(500).json({ code: 500, success: false, message: error.message })
-  }
-})
-
 async function startServer() {
   try {
     await initDatabase()

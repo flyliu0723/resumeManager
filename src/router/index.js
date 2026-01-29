@@ -3,6 +3,8 @@ import HomeView from '../views/HomeView.vue'
 import AIConfigView from '../views/AIConfigView.vue'
 import InterviewFlowView from '../views/InterviewFlowView.vue'
 import FlowDashboardView from '../views/FlowDashboardView.vue'
+import InterviewsView from '../views/InterviewsView.vue'
+import DashboardView from '../views/DashboardView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,6 +13,11 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: HomeView
+    },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: DashboardView
     },
     {
       path: '/config',
@@ -26,6 +33,11 @@ const router = createRouter({
       path: '/flow-dashboard',
       name: 'flowDashboard',
       component: FlowDashboardView
+    },
+    {
+      path: '/interviews',
+      name: 'interviews',
+      component: InterviewsView
     }
   ]
 })

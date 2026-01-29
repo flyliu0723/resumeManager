@@ -7,6 +7,9 @@ const aiConfigsRouter = require('./aiConfigs')
 const companiesRouter = require('./companies')
 const flowLogsRouter = require('./flowLogs')
 const interviewFlowRouter = require('./interviewFlow')
+const interviewsRouter = require('./interviews')
+const statsRouter = require('./stats')
+const activitiesRouter = require('./activities')
 
 const router = express.Router()
 
@@ -18,5 +21,8 @@ router.use('/ai-configs', aiConfigsRouter)
 router.use('/companies', companiesRouter)
 router.use('/flow-logs', flowLogsRouter)
 router.use('/interview-flow', interviewFlowRouter)
+router.use('/interviews', interviewsRouter)
+router.use('/stats', statsRouter)
+router.use('/activities', activitiesRouter)
 
 module.exports = router

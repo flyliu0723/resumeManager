@@ -1,4 +1,4 @@
-const { flowLogStmt, positionResumeStmt } = require('../database')
+const { flowLogStmt, positionResumeStmt, interviewEventStmt } = require('../database')
 const { success, error } = require('../utils/response')
 
 const flowLogController = {
@@ -37,10 +37,54 @@ const flowLogController = {
       
       flowLogStmt.insert(matchId, currentStatus, toStatus, note, jdSupplement)
       positionResumeStmt.updateStatus(matchId, toStatus, note, jdSupplement, updateFlowStartAt, interviewTime)
-      
+
+      // 记录状态变更事件
+      try {
+        // 计算在当前阶段的停留时长（如果有流程开始时间）
+        let durationSeconds = null
+        if (match.flow_start_at && toStatus !== '待面试') {
+          const flowStartTime = new Date(match.flow_start_at).getTime()
+          const now = Date.now()
+          durationSeconds = Math.floor((now - flowStartTime) / 1000)
+        }
+
+        // 确定事件类型
+        let eventType = 'status_change'
+        if (toStatus === '待面试') {
+          eventType = 'interview_scheduled'
+        } else if (toStatus === '面试中') {
+          eventType = 'interview_started'
+        } else if (toStatus === '谈薪中') {
+          eventType = 'salary_discussed'
+        } else if (toStatus === '已成单') {
+          eventType = 'offer_accepted'
+        } else if (toStatus === '已拒绝') {
+          eventType = 'candidate_rejected'
+        } else if (toStatus === '已通过') {
+          eventType = 'interview_passed'
+        }
+
+        interviewEventStmt.insert(eventType, matchId, match.position_id, {
+          eventTime: new Date().toISOString(),
+          stageBefore: currentStatus || null,
+          stageAfter: toStatus,
+          durationSeconds,
+          details: {
+            note: note || null,
+            jdSupplement: jdSupplement || null,
+            nextInterviewAt: interviewTime || null,
+            matchId,
+            candidateName: match.candidate_name || '未知'
+          }
+        })
+        console.log('记录状态变更事件成功:', { matchId, eventType, from: currentStatus, to: toStatus })
+      } catch (eventErr) {
+        console.error('记录状态变更事件失败:', eventErr)
+      }
+
       const updatedMatch = positionResumeStmt.getById(matchId)
       const newLogs = flowLogStmt.getByMatchId(matchId)
-      
+
       success(res, {
         match: updatedMatch,
         logs: newLogs
