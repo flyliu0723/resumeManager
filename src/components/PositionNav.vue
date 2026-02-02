@@ -90,7 +90,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button v-if="dialogType === 'edit'" type="danger" @click="handleDelete" :loading="submitLoading">删除职位</el-button>
+        <!-- <el-button v-if="dialogType === 'edit'" type="danger" @click="handleDelete" :loading="submitLoading">删除职位</el-button> -->
         <div style="flex: 1"></div>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitLoading">确定</el-button>

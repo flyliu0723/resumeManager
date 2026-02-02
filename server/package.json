@@ -1,17 +1,50 @@
 {
-  "name": "server",
+  "name": "recruitment-system",
   "version": "1.0.0",
-  "description": "",
+  "description": "招聘管理系统",
   "main": "index.js",
+  "bin": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node hot-reload.js",
+    "build:exe": "npm run build:frontend && pkg . --targets node18.5.0-win-x64 --output ../recruitment-system.exe --public-packages \"*\"",
+    "build:frontend": "cd .. && npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "pkg": {
+    "scripts": [
+      "index.js",
+      "database.js",
+      "router/**/*.js",
+      "controller/**/*.js",
+      "parser/**/*.js",
+      "utils/**/*.js",
+      "constants/**/*.js",
+      "prompts/**/*",
+      "migrations/**/*.js",
+      "node_modules/axios/**/*.js",
+      "node_modules/axios/**/*.cjs",
+      "node_modules/axios/**/*.json",
+      "node_modules/sql.js/dist/sql-wasm.js"
+    ],
+    "assets": [
+      "uploads/**/*",
+      "../dist/**/*",
+      "prompts/**/*",
+      "node_modules/axios/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "node_modules/sql.js/dist/sql-wasm.js"
+    ],
+    "targets": [
+      "node18.5.0-win-x64"
+    ],
+    "outputPath": ".."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.13.4",
     "busboy": "^1.6.0",
     "cors": "^2.8.5",
     "express": "^5.2.1",
@@ -22,6 +55,7 @@
     "sql.js": "^1.13.0"
   },
   "devDependencies": {
-    "node-dev": "^8.0.0"
+    "node-dev": "^8.0.0",
+    "pkg": "^5.8.1"
   }
 }

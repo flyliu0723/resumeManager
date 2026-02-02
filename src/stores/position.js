@@ -189,9 +189,10 @@ return newPosition.id
     }
   }
 
-  async function fetchResumeDetail(resumeId) {
+  async function fetchResumeDetail(matchId) {
     try {
-      return await api.get(`/resumes/${resumeId}`)
+      // 注意：这里查询的是 position_resumes 表，不是 resumes 表
+      return await api.get(`/positions/position-resumes/${matchId}`)
     } catch (error) {
       console.error('获取简历详情失败:', error)
       return null
@@ -226,9 +227,10 @@ return newPosition.id
     }
   }
 
-  async function deleteResume(resumeId) {
+  async function deleteResume(matchId) {
     try {
-      await api.delete(`/resumes/${resumeId}`)
+      // 注意：这里删除的是 position_resumes 表的记录（匹配关系），不是 resumes 表
+      await api.delete(`/positions/position-resumes/${matchId}`)
       if (currentPositionId.value) {
         await fetchResumes(currentPositionId.value)
       }
@@ -319,6 +321,87 @@ return newPosition.id
     return matches.value[positionId] || []
   }
 
+  async function reopenCandidate(matchId, options = {}) {
+    try {
+      const result = await api.post(`/position-resumes/${matchId}/reopen`, options)
+      
+      if (result.success && currentPositionId.value) {
+        // Refresh the resumes list to get updated status
+        await fetchResumes(currentPositionId.value)
+        // Refresh flow logs
+        await fetchFlowLogs(matchId)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('重新打开候选人流程失败:', error)
+      throw error
+    }
+  }
+
+  // 解析职位JD
+  async function parsePositionJD(positionId, includeNotes = true) {
+    try {
+      const data = await api.post(`/positions/${positionId}/parse-jd`, { includeNotes })
+      // api.js 已经处理了 success 判断并返回 data
+      if (data) {
+        // 更新当前职位的解析数据
+        const position = positions.value.find(p => p.id === Number(positionId))
+        if (position) {
+          position.parsed_skills = JSON.stringify(data.skills)
+          position.parsed_education = data.education
+          position.parsed_experience = data.experience
+          position.parsed_companies = JSON.stringify(data.companies)
+          position.parsed_at = data.parsedAt
+        }
+        return data
+      }
+      return null
+    } catch (error) {
+      console.error('解析JD失败:', error)
+      throw error
+    }
+  }
+
+  // 更新解析字段
+  async function updateParsedField(positionId, field, value) {
+    try {
+      await api.put(`/positions/${positionId}/parsed-field`, { field, value })
+      // 更新本地数据
+      const position = positions.value.find(p => p.id === Number(positionId))
+      if (position) {
+        position[field] = Array.isArray(value) ? JSON.stringify(value) : value
+      }
+      return true
+    } catch (error) {
+      console.error('更新解析字段失败:', error)
+      return false
+    }
+  }
+
+  // 获取解析结果
+  async function fetchParsedJD(positionId) {
+    try {
+      const data = await api.get(`/positions/${positionId}/parsed-jd`)
+      if (data) {
+        // 更新本地数据
+        const position = positions.value.find(p => p.id === Number(positionId))
+        if (position) {
+          position.parsed_skills = JSON.stringify(data.skills)
+          position.parsed_education = data.education
+          position.parsed_experience = data.experience
+          position.parsed_companies = JSON.stringify(data.companies)
+          position.parsed_at = data.parsedAt
+        }
+        return data
+      }
+      return null
+    } catch (error) {
+      console.error('获取解析结果失败:', error)
+      return null
+    }
+  }
+
   return {
     positions,
     activePositions,
@@ -349,6 +432,10 @@ return newPosition.id
     updateJdSupplement,
     getFlowLogs,
     getCurrentPosition,
-    getPositionResumes
+    getPositionResumes,
+    reopenCandidate,
+    parsePositionJD,
+    updateParsedField,
+    fetchParsedJD
   }
 })

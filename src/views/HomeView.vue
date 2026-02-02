@@ -30,6 +30,7 @@
         @parse="handleParse"
         @evaluate="handleEvaluate"
         @schedule="handleSchedule"
+        @success="handleStatusUpdateSuccess"
       />
     </div>
 
@@ -50,10 +51,72 @@
         </div>
         <el-divider />
         <div class="jd-section">
-          <h4>职位描述</h4>
+          <div class="jd-section-header">
+            <h4>职位描述</h4>
+            <el-button 
+              type="primary" 
+              size="small" 
+              :loading="parsingJD"
+              @click="handleParseJD"
+            >
+              提取JD
+            </el-button>
+          </div>
           <p class="jd-text">{{ currentPosition.description || '暂无描述' }}</p>
         </div>
         <el-divider />
+        
+        <!-- 提取的JD信息 -->
+        <div v-if="hasParsedJD" class="parsed-section">
+          <h4>提取的信息</h4>
+          
+          <!-- 技能标签 -->
+          <div class="parsed-item">
+            <label>技能要求：</label>
+            <div class="skills-container">
+              <el-tag
+                v-for="skill in parsedSkills"
+                :key="skill"
+                closable
+                @close="removeSkill(skill)"
+              >
+                {{ skill }}
+              </el-tag>
+              <span v-if="parsedSkills.length === 0" class="empty-text">暂无技能信息</span>
+            </div>
+          </div>
+          
+          <!-- 学历要求 -->
+          <div class="parsed-item">
+            <label>学历要求：</label>
+            <el-input
+              v-model="parsedEducation"
+              placeholder="请输入学历要求"
+              size="small"
+            />
+          </div>
+          
+          <!-- 经验要求 -->
+          <div class="parsed-item">
+            <label>经验要求：</label>
+            <el-input
+              type="textarea"
+              v-model="parsedExperience"
+              placeholder="请输入经验要求"
+              size="small"
+            />
+          </div>
+          
+          <!-- 保存按钮 -->
+          <div class="parsed-actions">
+            <el-button type="primary" size="small" @click="saveParsedJD">
+              保存
+            </el-button>
+          </div>
+        </div>
+        
+        <el-divider v-if="hasParsedJD" />
+        
         <div class="notes-section">
           <h4>职位补充</h4>
           <div class="notes-list" v-if="positionNotes.length > 0">
@@ -184,6 +247,17 @@ const newNoteContent = ref('')
 const editingNoteId = ref(null)
 const editingNoteContent = ref('')
 
+// JD解析相关状态
+const parsingJD = ref(false)
+const parsedSkills = ref([])
+const parsedEducation = ref('')
+const parsedExperience = ref('')
+
+// 计算属性：判断是否已解析JD
+const hasParsedJD = computed(() => {
+  return parsedSkills.value.length > 0 || parsedEducation.value || parsedExperience.value
+})
+
 // 上传表单数据
 const selectedFile = ref(null)
 const uploadForm = ref({
@@ -260,6 +334,13 @@ const openJD = async () => {
   showJD.value = true
   if (store.currentPositionId) {
     await store.fetchPositionNotes(store.currentPositionId)
+    // 获取已解析的JD数据
+    const parsedData = await store.fetchParsedJD(store.currentPositionId)
+    if (parsedData) {
+      parsedSkills.value = parsedData.skills || []
+      parsedEducation.value = parsedData.education || ''
+      parsedExperience.value = parsedData.experience || ''
+    }
   }
 }
 
@@ -426,6 +507,72 @@ const handleSchedule = () => {
   ElMessage.info('面试安排功能开发中...')
 }
 
+// 状态更新成功后的处理
+const handleStatusUpdateSuccess = async (result) => {
+  ElMessage.success('状态更新成功')
+  
+  // 刷新当前职位的候选人列表
+  if (store.currentPositionId) {
+    await store.fetchResumes(store.currentPositionId)
+  }
+  
+  // 刷新当前选中候选人的详情
+  if (selectedCandidateDetail.value?.id && result?.id) {
+    const updatedMatch = await store.fetchResumeDetail(selectedCandidateDetail.value.id)
+    if (updatedMatch) {
+      selectedCandidateDetail.value = updatedMatch
+    }
+  }
+}
+
+// 解析JD
+const handleParseJD = async () => {
+  if (!store.currentPositionId) return
+  
+  parsingJD.value = true
+  try {
+    const result = await store.parsePositionJD(store.currentPositionId)
+    if (result) {
+      parsedSkills.value = result.skills || []
+      parsedEducation.value = result.education || ''
+      parsedExperience.value = result.experience || ''
+      ElMessage.success('JD解析成功')
+    } else {
+      ElMessage.error('JD解析失败')
+    }
+  } catch (error) {
+    ElMessage.error('JD解析失败: ' + error.message)
+  } finally {
+    parsingJD.value = false
+  }
+}
+
+// 保存解析结果
+const saveParsedJD = async () => {
+  if (!store.currentPositionId) return
+  
+  try {
+    // 保存技能
+    await store.updateParsedField(store.currentPositionId, 'parsed_skills', parsedSkills.value)
+    // 保存学历
+    await store.updateParsedField(store.currentPositionId, 'parsed_education', parsedEducation.value)
+    // 保存经验
+    await store.updateParsedField(store.currentPositionId, 'parsed_experience', parsedExperience.value)
+    
+    ElMessage.success('保存成功')
+  } catch (error) {
+    ElMessage.error('保存失败: ' + error.message)
+  }
+}
+
+// 删除技能标签
+const removeSkill = (skill) => {
+  const index = parsedSkills.value.indexOf(skill)
+  if (index > -1) {
+    parsedSkills.value.splice(index, 1)
+  }
+}
+
 watch(() => store.currentPositionId, () => {
   selectedCandidate.value = null
   selectedCandidateDetail.value = null
@@ -581,6 +728,66 @@ watch(() => store.currentPositionId, () => {
 }
 
 .upload-dialog .el-upload-dragger {
+  width: 100%;
+}
+
+.jd-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.jd-section-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.parsed-section {
+  margin-top: 16px;
+}
+
+.parsed-section h4 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.parsed-item {
+  margin-bottom: 16px;
+}
+
+.parsed-item label {
+  display: block;
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.skills-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skills-container .el-tag {
+  margin-right: 0;
+}
+
+.empty-text {
+  color: #909399;
+  font-size: 13px;
+}
+
+.parsed-actions {
+  margin-top: 16px;
+  text-align: right;
+}
+
+.parsed-item .el-input {
   width: 100%;
 }
 </style>

@@ -296,20 +296,132 @@ const positionResumeController = {
 
   updateStatus: (req, res) => {
     try {
-      const { status } = req.body
-      if (!status) return error(res, '状态不能为空', 400)
+      const { 
+        mainStatus,      // 新主状态
+        subStatus,       // 新子状态
+        actionType = 'status_change',  // 操作类型
+        note = '',       // 备注
+        // 拒绝相关字段
+        rejectionReasonCode,
+        rejectionReasonDetail,
+        rejectedBy,
+        rejectedByName,
+        rejectedByRole,
+        internalNotes,
+        candidateFeedback,
+        isReopenable,
+        reopenConditions,
+        // 面试相关
+        roundId
+      } = req.body
       
-      const result = positionResumeStmt.updateStatus(req.params.id, status)
-      if (result.changes) {
-        const match = positionResumeStmt.getById(req.params.id)
-        success(res, match)
-      } else {
-        error(res, '匹配记录不存在', 404)
+      // 验证新状态
+      if (!mainStatus || !subStatus) {
+        return error(res, '主状态和子状态不能为空', 400)
       }
+      
+      const match = positionResumeStmt.getById(req.params.id)
+      if (!match) {
+        return error(res, '匹配记录不存在', 404)
+      }
+      
+      const oldMainStatus = match.main_status
+      const oldSubStatus = match.sub_status
+      
+      // 如果是拒绝操作，创建拒绝记录
+      if (actionType === 'reject') {
+        const { interviewRejectionStmt } = require('../database')
+        interviewRejectionStmt.insert(req.params.id, {
+          rejectedAtStage: oldMainStatus,
+          rejectedAtSubStatus: oldSubStatus,
+          rejectionCategory: getRejectionCategory(rejectionReasonCode),
+          rejectionReasonCode,
+          rejectionReasonDetail,
+          rejectedBy,
+          rejectedByName,
+          rejectedByRole,
+          internalNotes,
+          candidateFeedback,
+          isReopenable: isReopenable ? 1 : 0,
+          reopenConditions,
+          relatedRoundId: roundId
+        })
+      }
+      
+      // 更新状态（使用新方法）
+      const updates = {
+        main_status: mainStatus,
+        sub_status: subStatus
+      }
+      
+      // 如果是进入面试阶段，重置或更新面试轮次
+      if (mainStatus === 'interviewing' && oldMainStatus !== 'interviewing') {
+        updates.interview_round = 0
+        updates.current_round_id = null
+      }
+      
+      // 如果是终态，清空next_interview_at
+      const terminalSubStatuses = ['screening_rejected', 'interview_rejected', 'offer_rejected', 'salary_rejected', 'onboard_abandoned', 'onboarded']
+      if (terminalSubStatuses.includes(subStatus)) {
+        updates.next_interview_at = null
+      }
+      
+      // 执行更新
+      positionResumeStmt.updateStatusNew(req.params.id, mainStatus, subStatus, {
+        updateFlowStartAt: true
+      })
+      
+      // 记录流程日志
+      const { flowLogStmt } = require('../database')
+      flowLogStmt.insertWithNewStatus(req.params.id, oldMainStatus, mainStatus, oldSubStatus, subStatus, {
+        actionType,
+        note: note || `状态变更: ${oldSubStatus} → ${subStatus}`,
+        roundId,
+        metadata: {
+          rejection_reason_code: rejectionReasonCode,
+          old_main_status: oldMainStatus,
+          old_sub_status: oldSubStatus,
+          new_main_status: mainStatus,
+          new_sub_status: subStatus
+        }
+      })
+      
+      // 获取更新后的记录
+      const updatedMatch = positionResumeStmt.getById(req.params.id)
+      
+      success(res, {
+        ...updatedMatch,
+        main_status: mainStatus,
+        sub_status: subStatus
+      }, '状态更新成功')
     } catch (err) {
-      error(res, err.message)
+      console.error('状态更新失败:', err)
+      error(res, err.message, 500)
     }
   }
+}
+
+// 辅助函数：获取拒绝原因分类
+function getRejectionCategory(reasonCode) {
+  const categoryMap = {
+    'resume_not_match': 'screening',
+    'experience_not_enough': 'screening',
+    'skill_not_match': 'screening',
+    'salary_expectation_high': 'screening',
+    'technical_not_pass': 'interview',
+    'communication_issue': 'interview',
+    'culture_not_match': 'interview',
+    'attitude_issue': 'interview',
+    'stability_concern': 'interview',
+    'salary_not_agree': 'salary',
+    'candidate_reject_offer': 'salary',
+    'benefit_not_satisfied': 'salary',
+    'got_other_offer': 'salary',
+    'candidate_abandon': 'onboard',
+    'company_decision': 'onboard',
+    'personal_reason': 'onboard'
+  }
+  return categoryMap[reasonCode] || 'other'
 }
 
 module.exports = positionResumeController

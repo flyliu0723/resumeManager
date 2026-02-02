@@ -7,15 +7,15 @@
     <template v-else>
       <div class="detail-header">
         <div class="header-top">
-          <div class="candidate-avatar-lg" :style="{ background: getAvatarColor(candidate.current_status || candidate.status) }">
+          <div class="candidate-avatar-lg" :style="{ background: getAvatarColor(candidate.main_status, candidate.sub_status) }">
             {{ getAvatarText(parsedData.name || candidate?.candidate_name) }}
           </div>
           <div class="header-info">
             <h3>{{ parsedData.name || candidate?.candidate_name || '未知候选人' }}</h3>
             <div class="subtitle-row">
               <span class="subtitle">{{ getExperienceText(candidate) }}</span>
-              <el-tag :type="getStatusType(candidate.current_status || candidate.status)" size="small">
-                {{ getStatusText(candidate.current_status || candidate.status) }}
+              <el-tag :type="getStatusType(candidate.main_status, candidate.sub_status)" size="small">
+                {{ getStatusDisplayText(candidate.main_status, candidate.sub_status) }}
               </el-tag>
             </div>
           </div>
@@ -234,6 +234,7 @@ import CandidateActionDialog from './CandidateActionDialog.vue'
 import FlowDetailDialog from './FlowDetailDialog.vue'
 import JDExtraDialog from './JDExtraDialog.vue'
 import FilePreviewDialog from './FilePreviewDialog.vue'
+import { MAIN_STATUS, SUB_STATUS, StatusUtils } from '../constants/interviewStatus.js'
 
 const props = defineProps({
   candidate: Object,
@@ -318,17 +319,13 @@ const getAvatarText = (name) => {
   return name.charAt(0).toUpperCase()
 }
 
-const getAvatarColor = (status) => {
-  const colors = {
-    '待沟通': 'linear-gradient(135deg, #e6a23c 0%, #f5a623 100%)',
-    '待面试': 'linear-gradient(135deg, #409eff 0%, #67c4ff 100%)',
-    '面试中': 'linear-gradient(135deg, #67c23a 0%, #85ce61 100%)',
-    '已通过': 'linear-gradient(135deg, #67c23a 0%, #95d475 100%)',
-    '已拒绝': 'linear-gradient(135deg, #f56c6c 0%, #f89898 100%)',
-    '未解析': 'linear-gradient(135deg, #909399 0%, #b4b4b8 100%)',
-    '已解析': 'linear-gradient(135deg, #409eff 0%, #79bbff 100%)'
+const getAvatarColor = (mainStatus, subStatus) => {
+  // Get color from main status, fallback to gradient
+  const main = StatusUtils.getMainStatus(mainStatus || 'resume_screening')
+  if (main && main.color) {
+    return `linear-gradient(135deg, ${main.color} 0%, #ffffff 100%)`
   }
-  return colors[status] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
 }
 
 const getExperienceText = (candidate) => {
@@ -354,30 +351,33 @@ const getMatchClass = (score) => {
   return 'match-low'
 }
 
-const getStatusType = (status) => {
-  const types = {
-    '未解析': 'info',
-    '已解析': 'primary',
-    '待沟通': 'warning',
-    '待面试': 'success',
-    '面试中': 'success',
-    '已通过': 'success',
-    '已拒绝': 'danger'
-  }
-  return types[status] || 'info'
+const getStatusType = (mainStatus, subStatus) => {
+  // Determine tag type based on main status and whether it's terminal
+  const isTerminal = StatusUtils.isTerminalStatus(mainStatus, subStatus)
+  const isRejected = StatusUtils.isRejectedStatus(mainStatus, subStatus)
+  const isSuccess = StatusUtils.isSuccessStatus(mainStatus, subStatus)
+  
+  if (isSuccess) return 'success'
+  if (isRejected || isTerminal) return 'danger'
+  if (mainStatus === 'resume_screening') return 'info'
+  if (mainStatus === 'interviewing') return 'warning'
+  if (mainStatus === 'salary_negotiation') return 'primary'
+  return 'info'
 }
 
-const getStatusText = (status) => {
-  const texts = {
-    '未解析': '未解析',
-    '已解析': '已解析',
-    '待沟通': '待沟通',
-    '待面试': '待面试',
-    '面试中': '面试中',
-    '已通过': '已通过',
-    '已拒绝': '已拒绝'
+const getStatusDisplayText = (mainStatus, subStatus) => {
+  if (!mainStatus && !subStatus) {
+    // Fallback to old status system
+    return '待筛选'
   }
-  return texts[status] || status || '未知'
+  
+  const main = StatusUtils.getMainStatus(mainStatus || 'resume_screening')
+  const sub = StatusUtils.getSubStatus(mainStatus, subStatus)
+  
+  if (sub) {
+    return `${main.label}/${sub.label}`
+  }
+  return main.label
 }
 </script>
 

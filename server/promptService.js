@@ -53,6 +53,11 @@ class PromptService {
       .replace('{jd_text_or_structured_data}', jdText || '暂无职位描述')
   }
 
+  getParseJDPrompt(text) {
+    const template = this.loadPrompt('parseJD')
+    return template.replace('{text}', text)
+  }
+
   clearCache() {
     this.prompts = {}
   }

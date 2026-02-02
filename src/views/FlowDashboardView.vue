@@ -2,7 +2,7 @@
   <div class="flow-dashboard-container">
     <div class="dashboard-toolbar">
       <div class="toolbar-left">
-        <h1>流程管理</h1>
+        <h1>流程看板</h1>
       </div>
       <div class="toolbar-right">
         <el-input
@@ -37,6 +37,7 @@
       <div 
         class="status-card" 
         :class="{ active: statusFilter === 'all' }"
+        @click="statusFilter = 'all'"
       >
         <div class="status-icon">
           <el-icon><Document /></el-icon>
@@ -49,20 +50,8 @@
       
       <div 
         class="status-card" 
-        :class="{ active: statusFilter === '待面试' }"
-      >
-        <div class="status-icon interview-pending">
-          <el-icon><Clock /></el-icon>
-        </div>
-        <div class="status-info">
-          <h3>待面试</h3>
-          <p class="status-count">{{ statusCounts.interviewPending || 0 }}</p>
-        </div>
-      </div>
-      
-      <div 
-        class="status-card" 
-        :class="{ active: statusFilter === '面试中' }"
+        :class="{ active: statusFilter === 'interviewing' }"
+        @click="statusFilter = 'interviewing'"
       >
         <div class="status-icon interviewing">
           <el-icon><VideoCamera /></el-icon>
@@ -75,7 +64,8 @@
       
       <div 
         class="status-card" 
-        :class="{ active: statusFilter === '谈薪中' }"
+        :class="{ active: statusFilter === 'salary_negotiation' }"
+        @click="statusFilter = 'salary_negotiation'"
       >
         <div class="status-icon salary-negotiation">
           <el-icon><Money /></el-icon>
@@ -88,7 +78,8 @@
       
       <div 
         class="status-card" 
-        :class="{ active: statusFilter === '已成单' }"
+        :class="{ active: statusFilter === 'closed' }"
+        @click="statusFilter = 'closed'"
       >
         <div class="status-icon completed">
           <el-icon><Check /></el-icon>
@@ -98,16 +89,31 @@
           <p class="status-count">{{ statusCounts.completed || 0 }}</p>
         </div>
       </div>
+      
+      <div 
+        class="status-card" 
+        :class="{ active: statusFilter === 'rejected' }"
+        @click="statusFilter = 'rejected'"
+      >
+        <div class="status-icon rejected">
+          <el-icon><CircleClose /></el-icon>
+        </div>
+        <div class="status-info">
+          <h3>不合适</h3>
+          <p class="status-count">{{ statusCounts.rejected || 0 }}</p>
+        </div>
+      </div>
     </div>
 
     <div class="boards-container">
-      <div v-for="board in filteredBoards" :key="board.status" class="board">
+      <div v-for="board in filteredBoards" :key="board.key" class="board">
         <div class="board-header">
           <div class="board-title">
-            <div class="board-status-icon" :class="getStatusClass(board.status)">
-              <el-icon v-if="getStatusIcon(board.status) === 'Clock'"><Clock /></el-icon>
-              <el-icon v-else-if="getStatusIcon(board.status) === 'VideoCamera'"><VideoCamera /></el-icon>
-              <el-icon v-else-if="getStatusIcon(board.status) === 'Money'"><Money /></el-icon>
+            <div class="board-status-icon" :class="getStatusClass(board.mainStatus)">
+              <el-icon v-if="board.icon === 'Clock'"><Clock /></el-icon>
+              <el-icon v-else-if="board.icon === 'VideoCamera'"><VideoCamera /></el-icon>
+              <el-icon v-else-if="board.icon === 'Money'"><Money /></el-icon>
+              <el-icon v-else-if="board.icon === 'CircleClose'"><CircleClose /></el-icon>
               <el-icon v-else><Document /></el-icon>
             </div>
             <h3>{{ board.title }}</h3>
@@ -130,7 +136,7 @@
             >
               <div class="card-indicator" :class="getDaysClass(item.daysInStage)"></div>
               <div class="candidate-header">
-                <div class="candidate-avatar" :class="getAvatarClass(board.status)">
+                <div class="candidate-avatar" :class="getAvatarClass(board.mainStatus)">
                   {{ getAvatarText(item.candidateName || item.resumeName) }}
                 </div>
                 <div class="candidate-info">
@@ -155,9 +161,13 @@
               
               <div class="candidate-meta">
                 <div class="meta-item">
+                  <span class="meta-label">当前状态</span>
+                  <span class="meta-value">{{ item.statusText }}</span>
+                </div>
+                <div v-if="item.nextInterviewTime" class="meta-item">
                   <span class="meta-label">下次面试</span>
-                  <span class="meta-value" :class="{ 'text-warning': item.nextInterviewTime === '待沟通' }">
-                    {{ item.nextInterviewTime || '待沟通' }}
+                  <span class="meta-value" :class="{ 'text-warning': !item.nextInterviewTime }">
+                    {{ item.nextInterviewTime || '待定' }}
                   </span>
                 </div>
               </div>
@@ -168,35 +178,64 @@
               </div>
               
               <div class="candidate-actions">
-                <template v-if="getNextStatuses(board.status).length > 0">
-                  <el-button 
-                    :type="getNextStatuses(board.status)[0].type || 'primary'"
-                    size="small"
-                    @click="handleStatusChange(item, getNextStatuses(board.status)[0].value)"
-                  >
-                    {{ getNextStatuses(board.status)[0].label }}
-                  </el-button>
+                <template v-if="getNormalActions(board.mainStatus, item.subStatus).length > 0 || getRejectActions(board.mainStatus, item.subStatus).length > 0">
+                  <!-- 主要操作按钮组 -->
+                  <div class="action-buttons-row">
+                    <template v-for="(action, idx) in getNormalActions(board.mainStatus, item.subStatus).slice(0, 2)" :key="action.value">
+                      <el-button 
+                        :type="action.type || 'primary'"
+                        size="small"
+                        class="action-btn"
+                        @click="handleStatusChange(item, action)"
+                      >
+                        <el-icon v-if="action.icon" class="btn-icon"><component :is="action.icon" /></el-icon>
+                        {{ action.label }}
+                      </el-button>
+                    </template>
+                  </div>
+                  
+                  <!-- 更多操作下拉菜单 -->
                   <el-dropdown 
-                    v-if="getNextStatuses(board.status).length > 1"
+                    v-if="getNormalActions(board.mainStatus, item.subStatus).length > 2 || getRejectActions(board.mainStatus, item.subStatus).length > 0"
                     trigger="click"
                     @command="(cmd) => handleStatusChange(item, cmd)"
+                    class="more-actions-dropdown"
                   >
-                    <el-button size="small">
+                    <el-button size="small" class="more-btn">
                       <el-icon><MoreFilled /></el-icon>
+                      更多
                     </el-button>
                     <template #dropdown>
-                      <el-dropdown-menu>
+                      <el-dropdown-menu class="action-dropdown-menu">
+                        <!-- 额外的正常操作 -->
                         <el-dropdown-item 
-                          v-for="(status, index) in getNextStatuses(board.status).slice(1)" 
-                          :key="status.value"
-                          :command="status.value"
-                          :disabled="status.value === '已拒绝'"
+                          v-for="action in getNormalActions(board.mainStatus, item.subStatus).slice(2)" 
+                          :key="action.value"
+                          :command="action"
                         >
-                          <span :class="{ 'text-danger': status.type === 'danger' }">{{ status.label }}</span>
+                          <el-icon v-if="action.icon"><component :is="action.icon" /></el-icon>
+                          <span>{{ action.label }}</span>
+                        </el-dropdown-item>
+                        
+                        <!-- 分隔线 -->
+                        <el-dropdown-item v-if="getNormalActions(board.mainStatus, item.subStatus).length > 2 && getRejectActions(board.mainStatus, item.subStatus).length > 0" divided />
+                        
+                        <!-- 拒绝/不合适操作（红色警示） -->
+                        <el-dropdown-item 
+                          v-for="action in getRejectActions(board.mainStatus, item.subStatus)" 
+                          :key="action.value"
+                          :command="action"
+                          class="reject-action-item"
+                        >
+                          <el-icon><CircleClose /></el-icon>
+                          <span class="text-danger">{{ action.label }}</span>
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
+                </template>
+                <template v-else>
+                  <el-tag type="info" size="small" effect="dark">已结束</el-tag>
                 </template>
               </div>
             </div>
@@ -210,18 +249,30 @@
       </div>
     </div>
   </div>
+
+  <!-- 状态变更弹窗 -->
+  <CandidateActionDialog
+    v-model="actionDialogVisible"
+    :candidate="selectedCandidate"
+    :initial-main-status="targetMainStatus"
+    :initial-sub-status="targetSubStatus"
+    @success="handleActionSuccess"
+  />
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
-import { useInterviewFlow } from '../hooks/useInterviewFlow'
 import { usePositionStore } from '../stores/position'
-import { interviewFlowApi } from '../utils/interviewFlowApi'
 import { api } from '../utils/api'
 import { ElMessage } from 'element-plus'
-import { House, Clock, VideoCamera, Money, Check, DocumentRemove, Loading, Warning, Document, Search, MoreFilled } from '@element-plus/icons-vue'
+import { StatusUtils, MAIN_STATUS, SUB_STATUS } from '../constants/interviewStatus'
+import CandidateActionDialog from '../components/CandidateActionDialog.vue'
+import { 
+  Clock, VideoCamera, Money, Check, DocumentRemove, Loading, Warning, 
+  Document, Search, MoreFilled, CircleClose, ArrowRight, CircleCheck, 
+  ChatDotRound, Calendar, User 
+} from '@element-plus/icons-vue'
 
-const { backToDashboard } = useInterviewFlow()
 const positionStore = usePositionStore()
 
 const searchKeyword = ref('')
@@ -231,28 +282,49 @@ const statusFilter = ref('all')
 const positions = ref([])
 
 const statusCounts = ref({
-  interviewPending: 0,
   interviewing: 0,
   salaryNegotiation: 0,
-  completed: 0
+  completed: 0,
+  rejected: 0
 })
 
+// 状态变更弹窗相关
+const actionDialogVisible = ref(false)
+const selectedCandidate = ref(null)
+const targetMainStatus = ref('')
+const targetSubStatus = ref('')
+
+// 新的看板定义 - 基于主状态
 const rawBoards = reactive([
   {
-    status: '待面试',
-    title: '待面试候选人',
+    key: 'resume_screening',
+    mainStatus: 'resume_screening',
+    title: '简历筛选',
+    icon: 'Document',
     items: [],
     loading: false
   },
   {
-    status: '面试中',
-    title: '面试中候选人',
+    key: 'interviewing',
+    mainStatus: 'interviewing',
+    title: '面试中',
+    icon: 'VideoCamera',
     items: [],
     loading: false
   },
   {
-    status: '谈薪中',
-    title: '谈薪中候选人',
+    key: 'salary_negotiation',
+    mainStatus: 'salary_negotiation',
+    title: '谈薪中',
+    icon: 'Money',
+    items: [],
+    loading: false
+  },
+  {
+    key: 'closed',
+    mainStatus: 'closed',
+    title: '已成单',
+    icon: 'Check',
     items: [],
     loading: false
   }
@@ -263,13 +335,22 @@ const totalCount = computed(() => {
 })
 
 const filteredBoards = computed(() => {
-  return rawBoards.map(board => {
+  let boards = [...rawBoards]
+  
+  // 根据状态筛选过滤看板
+  if (statusFilter.value && statusFilter.value !== 'all') {
+    if (statusFilter.value === 'rejected') {
+      // 不合适候选人显示在所有看板中，但根据主状态分组
+      // 这里我们不过滤看板，而是只过滤候选人
+    } else {
+      boards = boards.filter(b => b.mainStatus === statusFilter.value)
+    }
+  }
+  
+  return boards.map(board => {
     let items = [...board.items]
     
-    if (statusFilter.value && statusFilter.value !== 'all' && board.status !== statusFilter.value) {
-      return { ...board, items: [] }
-    }
-    
+    // 关键词搜索
     if (searchKeyword.value) {
       const keyword = searchKeyword.value.toLowerCase()
       items = items.filter(item => 
@@ -280,10 +361,12 @@ const filteredBoards = computed(() => {
       )
     }
     
+    // 职位筛选
     if (selectedPosition.value) {
       items = items.filter(item => item.positionId === selectedPosition.value)
     }
     
+    // 排序
     if (sortBy.value === 'daysDesc') {
       items.sort((a, b) => b.daysInStage - a.daysInStage)
     } else if (sortBy.value === 'daysAsc') {
@@ -316,8 +399,10 @@ const fetchPositions = async () => {
 const fetchCandidatesByBoard = async (board) => {
   board.loading = true
   try {
-    const response = await interviewFlowApi.getCandidatesByStatus({
-      status: board.status
+    // 使用新的API - 根据主状态获取候选人
+    const response = await api.get('/dashboard/candidates-by-main-status', {
+      mainStatus: board.mainStatus,
+      excludeTerminal: false
     })
     
     board.items = (response || []).map(c => ({
@@ -326,12 +411,14 @@ const fetchCandidatesByBoard = async (board) => {
       resumeName: c.resume_name,
       positionName: c.position_name,
       positionId: c.position_id,
-      positionCompany: c.position_company,
+      mainStatus: c.main_status,
+      subStatus: c.sub_status,
+      statusText: getStatusDisplayText(c.main_status, c.sub_status),
       daysInStage: calculateDaysInStage(c),
-      status: c.current_status,
       flowStartAt: c.flow_start_at,
       updateTime: c.update_time,
       nextInterviewTime: formatNextInterviewTime(c.next_interview_at),
+      interviewRound: c.interview_round,
       attention: getAttentionText(c),
       tags: generateTags(c)
     }))
@@ -400,26 +487,54 @@ const calculateDaysInStage = (candidate) => {
 }
 
 const formatNextInterviewTime = (dateStr) => {
-  if (!dateStr) return '待沟通'
+  if (!dateStr) return null
   const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return '待沟通'
+  if (isNaN(date.getTime())) return null
   return `${date.getMonth() + 1}月${date.getDate()}日 ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+const getStatusDisplayText = (mainStatus, subStatus) => {
+  const main = StatusUtils.getMainStatus(mainStatus || 'resume_screening')
+  const sub = StatusUtils.getSubStatus(mainStatus, subStatus)
+  
+  if (sub) {
+    return `${main.label}/${sub.label}`
+  }
+  return main.label
+}
+
 const getAttentionText = (candidate) => {
-  const status = candidate.current_status
+  const mainStatus = candidate.main_status
+  const subStatus = candidate.sub_status
   const daysInStage = calculateDaysInStage(candidate)
   
-  if (status === '待面试') {
-    if (daysInStage > 14) return '面试安排延迟'
-    if (daysInStage > 7) return '面试安排中'
+  // 检查是否为不合适状态
+  if (StatusUtils.isRejectedStatus(mainStatus, subStatus)) {
+    return '流程已结束'
+  }
+  
+  // 检查是否为终态
+  if (StatusUtils.isTerminalStatus(mainStatus, subStatus)) {
+    return '流程已完成'
+  }
+  
+  if (mainStatus === 'resume_screening') {
+    if (daysInStage > 7) return '筛选时间较长'
+    if (daysInStage > 3) return '待筛选'
     return null
-  } else if (status === '面试中') {
+  } else if (mainStatus === 'interviewing') {
     if (daysInStage > 21) return '面试周期过长'
     if (daysInStage > 14) return '面试周期较长'
+    if (subStatus === 'round_pending') return '待安排面试'
+    if (subStatus === 'round_scheduled') return '已安排面试'
     return null
-  } else if (status === '谈薪中') {
+  } else if (mainStatus === 'salary_negotiation') {
     if (daysInStage > 7) return '谈薪时间较长'
+    if (subStatus === 'approval_pending') return '审批中'
+    return null
+  } else if (mainStatus === 'closed') {
+    if (subStatus === 'pending_onboard') return '待入职'
+    if (subStatus === 'onboarded') return '已入职'
     return null
   }
   return null
@@ -433,8 +548,8 @@ const getDaysClass = (days) => {
 }
 
 const getAttentionClass = (attention) => {
-  if (attention.includes('延迟') || attention.includes('过长')) return 'danger'
-  if (attention.includes('安排') || attention.includes('较长')) return 'warning'
+  if (attention.includes('过长') || attention.includes('结束')) return 'danger'
+  if (attention.includes('较长') || attention.includes('安排')) return 'warning'
   return ''
 }
 
@@ -443,72 +558,169 @@ const getAvatarText = (name) => {
   return name.charAt(0).toUpperCase()
 }
 
-const getAvatarClass = (status) => {
+const getAvatarClass = (mainStatus) => {
   const classes = {
-    '待面试': 'avatar-interview-pending',
-    '面试中': 'avatar-interviewing',
-    '谈薪中': 'avatar-salary-negotiation'
+    'resume_screening': 'avatar-screening',
+    'interviewing': 'avatar-interviewing',
+    'salary_negotiation': 'avatar-salary',
+    'closed': 'avatar-closed'
   }
-  return classes[status] || ''
+  return classes[mainStatus] || ''
 }
 
-const getStatusClass = (status) => {
+const getStatusClass = (mainStatus) => {
   const classes = {
-    '待面试': 'interview-pending',
-    '面试中': 'interviewing',
-    '谈薪中': 'salary-negotiation'
+    'resume_screening': 'screening',
+    'interviewing': 'interviewing',
+    'salary_negotiation': 'salary-negotiation',
+    'closed': 'completed'
   }
-  return classes[status] || ''
+  return classes[mainStatus] || ''
 }
 
-const getStatusIcon = (status) => {
-  const icons = {
-    '待面试': 'Clock',
-    '面试中': 'VideoCamera',
-    '谈薪中': 'Money'
+// 根据主状态和子状态获取下一步可选操作
+const getNextStatuses = (mainStatus, subStatus) => {
+  if (!mainStatus || !subStatus) return []
+  
+  // 检查是否已经是终态
+  if (StatusUtils.isTerminalStatus(mainStatus, subStatus)) {
+    return []
   }
-  return icons[status] || 'Document'
+  
+  // 获取当前子状态信息
+  const currentSub = StatusUtils.getSubStatus(mainStatus, subStatus)
+  if (!currentSub || !currentSub.nextOptions) return []
+  
+  // 根据nextOptions构建操作列表
+  const nextStatuses = []
+  
+  currentSub.nextOptions.forEach(optionCode => {
+    // 检查是否是拒绝状态
+    if (optionCode.includes('rejected') || optionCode.includes('abandoned')) {
+      const rejectionMap = {
+        'screening_rejected': { mainStatus: 'resume_screening', label: '不合适' },
+        'interview_rejected': { mainStatus: 'interviewing', label: '不合适' },
+        'salary_rejected': { mainStatus: 'salary_negotiation', label: '不合适' },
+        'offer_rejected': { mainStatus: 'salary_negotiation', label: '拒绝Offer' },
+        'onboard_abandoned': { mainStatus: 'closed', label: '放弃入职' }
+      }
+      const rejection = rejectionMap[optionCode]
+      if (rejection) {
+        nextStatuses.push({
+          value: optionCode,
+          label: rejection.label,
+          type: 'danger',
+          targetMainStatus: rejection.mainStatus,
+          targetSubStatus: optionCode,
+          isRejection: true
+        })
+      }
+    } else {
+      // 正常流转
+      const sub = StatusUtils.getSubStatus(mainStatus, optionCode)
+      if (sub) {
+        let type = 'primary'
+        if (optionCode.includes('passed')) type = 'success'
+        if (optionCode === 'all_rounds_passed') type = 'success'
+        if (optionCode === 'offer_accepted') type = 'success'
+        if (optionCode === 'onboarded') type = 'success'
+        
+        nextStatuses.push({
+          value: optionCode,
+          label: sub.label,
+          type: type,
+          targetMainStatus: mainStatus,
+          targetSubStatus: optionCode,
+          isRejection: false
+        })
+      }
+    }
+  })
+  
+  return nextStatuses
 }
 
-const nextStatusMap = {
-  '待面试': [
-    { value: '面试中', label: '进入面试', type: 'primary' },
-    { value: '已拒绝', label: '不合适', type: 'danger' }
-  ],
-  '面试中': [
-    { value: '谈薪中', label: '进入谈薪', type: 'primary' },
-    { value: '已通过', label: '面试通过', type: 'success' },
-    { value: '已拒绝', label: '不合适', type: 'danger' }
-  ],
-  '谈薪中': [
-    { value: '已成单', label: '确认成单', type: 'success' },
-    { value: '已拒绝', label: '放弃', type: 'danger' }
-  ]
+// 获取正常流转操作（排除拒绝操作）
+const getNormalActions = (mainStatus, subStatus) => {
+  const allActions = getNextStatuses(mainStatus, subStatus)
+  return allActions.filter(action => !action.isRejection).map(action => {
+    // 添加图标
+    const iconMap = {
+      'screening_passed': 'CircleCheck',
+      'round_pending': 'Calendar',
+      'round_scheduled': 'Clock',
+      'round_passed': 'Check',
+      'all_rounds_passed': 'ArrowRight',
+      'approval_pending': 'Document',
+      'offer_sent': 'ChatDotRound',
+      'offer_accepted': 'CircleCheck',
+      'pending_onboard': 'User',
+      'onboarded': 'CircleCheck'
+    }
+    return {
+      ...action,
+      icon: iconMap[action.value] || 'ArrowRight'
+    }
+  })
 }
 
-const getNextStatuses = (currentStatus) => {
-  return nextStatusMap[currentStatus] || []
+// 获取拒绝/不合适操作
+const getRejectActions = (mainStatus, subStatus) => {
+  const allActions = getNextStatuses(mainStatus, subStatus)
+  return allActions.filter(action => action.isRejection).map(action => ({
+    ...action,
+    icon: 'CircleClose'
+  }))
 }
 
-const handleStatusChange = async (item, toStatus) => {
+// 处理状态变更 - 打开弹窗让用户填写详细信息
+const handleStatusChange = (item, targetStatus) => {
+  // 设置选中的候选人和目标状态
+  selectedCandidate.value = {
+    id: item.id,
+    candidate_name: item.candidateName,
+    resume_name: item.resumeName,
+    main_status: item.mainStatus,
+    sub_status: item.subStatus,
+    interview_round: item.interviewRound,
+    position_name: item.positionName
+  }
+  
+  // 设置目标状态（用于在弹窗中预选）
+  targetMainStatus.value = targetStatus.targetMainStatus || item.mainStatus
+  targetSubStatus.value = targetStatus.targetSubStatus || targetStatus.value
+  
+  // 打开弹窗
+  actionDialogVisible.value = true
+}
+
+// 状态变更成功后的回调
+const handleActionSuccess = async (result) => {
+  ElMessage.success('状态变更成功')
+  
+  // 刷新看板数据
+  await fetchAllBoardData()
+  await fetchDashboardStats()
+  
+  // 清空选中
+  selectedCandidate.value = null
+  targetMainStatus.value = ''
+  targetSubStatus.value = ''
+}
+
+const fetchDashboardStats = async () => {
   try {
-    const result = await api.post('/flow-logs/match/flow-log', {
-      matchId: item.id,
-      fromStatus: item.status,
-      toStatus: toStatus,
-      note: '',
-      jdSupplement: ''
-    })
-    
-    ElMessage.success(`已将 ${item.candidateName || item.resumeName} 变更为 ${toStatus}`)
-    
-    await fetchAllBoardData()
-    
-    const statsResponse = await interviewFlowApi.getDashboardStats()
-    statusCounts.value = statsResponse
+    const response = await api.get('/dashboard/stats')
+    if (response) {
+      statusCounts.value = {
+        interviewing: response.interviewing || 0,
+        salaryNegotiation: response.salaryNegotiation || 0,
+        completed: response.closed || 0,
+        rejected: response.rejected || 0
+      }
+    }
   } catch (error) {
-    console.error('状态变更失败:', error)
-    ElMessage.error('状态变更失败')
+    console.error('获取统计数据失败:', error)
   }
 }
 
@@ -519,10 +731,7 @@ watch([searchKeyword, selectedPosition, sortBy, statusFilter], () => {
 onMounted(async () => {
   try {
     await fetchPositions()
-    
-    const statsResponse = await interviewFlowApi.getDashboardStats()
-    statusCounts.value = statsResponse
-    
+    await fetchDashboardStats()
     await fetchAllBoardData()
   } catch (error) {
     console.error('加载看板数据失败:', error)
@@ -619,12 +828,12 @@ onMounted(async () => {
 
 .status-card:hover {
   background: #fff;
-  border-color: #D0ED35;
+  border-color: #409eff;
 }
 
 .status-card.active {
-  background: #f0f9eb;
-  border-color: #70D75C;
+  background: #ecf5ff;
+  border-color: #409eff;
 }
 
 .status-icon {
@@ -637,24 +846,29 @@ onMounted(async () => {
   font-size: 16px;
 }
 
-.status-icon.interview-pending {
-  background: #f0f9eb;
-  color: #0A594E;
+.status-icon.screening {
+  background: #f4f4f5;
+  color: #909399;
 }
 
 .status-icon.interviewing {
   background: #fdf6ec;
-  color: #0A594E;
+  color: #e6a23c;
 }
 
 .status-icon.salary-negotiation {
-  background: #ecf5f3;
-  color: #0A594E;
+  background: #ecf5ff;
+  color: #409eff;
 }
 
 .status-icon.completed {
-  background: #e8f5f3;
-  color: #46AA8F;
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.status-icon.rejected {
+  background: #fef0f0;
+  color: #f56c6c;
 }
 
 .status-info h3 {
@@ -673,7 +887,7 @@ onMounted(async () => {
 
 .boards-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -712,19 +926,24 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-.board-status-icon.interview-pending {
-  background: #f0f9eb;
-  color: #0A594E;
+.board-status-icon.screening {
+  background: #f4f4f5;
+  color: #909399;
 }
 
 .board-status-icon.interviewing {
   background: #fdf6ec;
-  color: #0A594E;
+  color: #e6a23c;
 }
 
 .board-status-icon.salary-negotiation {
-  background: #ecf5f3;
-  color: #0A594E;
+  background: #ecf5ff;
+  color: #409eff;
+}
+
+.board-status-icon.completed {
+  background: #f0f9eb;
+  color: #67c23a;
 }
 
 .board-title h3 {
@@ -787,11 +1006,11 @@ onMounted(async () => {
 }
 
 .candidate-card.warning-line {
-  border-left: 4px solid #FFB003;
+  border-left: 4px solid #e6a23c;
 }
 
 .candidate-card.urgent-line {
-  border-left: 4px solid #0A594E;
+  border-left: 4px solid #f56c6c;
 }
 
 .card-indicator {
@@ -804,15 +1023,15 @@ onMounted(async () => {
 }
 
 .card-indicator.danger {
-  background: #0A594E;
+  background: #f56c6c;
 }
 
 .card-indicator.warning {
-  background: #FFB003;
+  background: #e6a23c;
 }
 
 .card-indicator.caution {
-  background: #70D75C;
+  background: #67c23a;
 }
 
 .candidate-header {
@@ -835,16 +1054,20 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-.candidate-avatar.avatar-interview-pending {
-  background: #46AA8F;
+.candidate-avatar.avatar-screening {
+  background: #909399;
 }
 
 .candidate-avatar.avatar-interviewing {
-  background: #70D75C;
+  background: #409eff;
 }
 
-.candidate-avatar.avatar-salary-negotiation {
-  background: #FFB003;
+.candidate-avatar.avatar-salary {
+  background: #e6a23c;
+}
+
+.candidate-avatar.avatar-closed {
+  background: #67c23a;
 }
 
 .candidate-info {
@@ -880,18 +1103,18 @@ onMounted(async () => {
 }
 
 .days-badge.danger {
-  background: #0A594E;
-  color: #D0ED35;
+  background: #fef0f0;
+  color: #f56c6c;
 }
 
 .days-badge.warning {
-  background: #FFB003;
-  color: #0A594E;
+  background: #fdf6ec;
+  color: #e6a23c;
 }
 
 .days-badge.caution {
-  background: #70D75C;
-  color: #0A594E;
+  background: #f0f9eb;
+  color: #67c23a;
 }
 
 .candidate-tags {
@@ -936,7 +1159,7 @@ onMounted(async () => {
 }
 
 .meta-value.text-warning {
-  color: #FFB003;
+  color: #e6a23c;
 }
 
 .candidate-attention {
@@ -952,45 +1175,85 @@ onMounted(async () => {
 }
 
 .candidate-attention.danger {
-  background: #0A594E;
-  color: #D0ED35;
+  background: #fef0f0;
+  color: #f56c6c;
 }
 
 .candidate-attention.warning {
-  background: #FFB003;
-  color: #0A594E;
+  background: #fdf6ec;
+  color: #e6a23c;
 }
 
 .candidate-actions {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px dashed #e4e7ed;
-  justify-content: flex-end;
 }
 
-.candidate-actions .el-button--primary {
+.action-buttons-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
   flex: 1;
-  padding: 6px 12px;
-  font-size: 13px;
-  max-width: 140px;
-  font-weight: 500;
-  border-radius: 6px;
-}
-
-.candidate-actions .el-dropdown .el-button {
+  min-width: 80px;
   padding: 6px 10px;
   font-size: 13px;
+  font-weight: 500;
   border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
-.candidate-actions .el-dropdown .el-icon {
+.action-btn .btn-icon {
+  font-size: 14px;
+}
+
+.more-actions-dropdown {
+  align-self: flex-end;
+}
+
+.more-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-dropdown-menu {
+  min-width: 140px;
+}
+
+.action-dropdown-menu .el-dropdown-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.action-dropdown-menu .el-dropdown-menu__item .el-icon {
   font-size: 16px;
 }
 
+.reject-action-item {
+  color: #f56c6c;
+}
+
+.reject-action-item:hover {
+  background-color: #fef0f0;
+}
+
 .text-danger {
-  color: #0A594E;
+  color: #f56c6c;
   font-weight: 600;
 }
 
@@ -1017,6 +1280,12 @@ onMounted(async () => {
 }
 
 /* 响应式设计 */
+@media (max-width: 1200px) {
+  .boards-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .flow-dashboard-container {
     padding: 16px 20px;

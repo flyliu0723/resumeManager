@@ -20,18 +20,18 @@
           <el-icon><HomeFilled /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '简历管理' }}</template>
         </el-menu-item>
-        <el-menu-item index="/dashboard">
+        <el-menu-item index="/flow-dashboard">
           <el-icon><DataAnalysis /></el-icon>
-          <template #title>{{ isSidebarCollapsed ? '' : '招聘看板' }}</template>
+          <template #title>{{ isSidebarCollapsed ? '' : '流程看板' }}</template>
+        </el-menu-item>
+        <el-menu-item index="/dashboard-new">
+          <el-icon><DataAnalysis /></el-icon>
+          <template #title>{{ isSidebarCollapsed ? '' : '数据看板' }}</template>
         </el-menu-item>
         <!-- <el-menu-item index="/interview-flow">
           <el-icon><List /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '流程管理' }}</template>
         </el-menu-item> -->
-        <el-menu-item index="/flow-dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <template #title>{{ isSidebarCollapsed ? '' : '流程看板' }}</template>
-        </el-menu-item>
         <el-menu-item index="/interviews">
           <el-icon><Document /></el-icon>
           <template #title>{{ isSidebarCollapsed ? '' : '面试事件' }}</template>

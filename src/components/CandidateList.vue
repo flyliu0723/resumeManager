@@ -23,23 +23,23 @@
 
     <div v-else class="candidate-items">
       <el-collapse v-model="activeNames" class="status-groups">
-        <el-collapse-item name="pending" class="status-group pending-group">
+        <el-collapse-item name="active" class="status-group active-group">
           <template #title>
             <div class="group-header">
               <span class="group-title">
                 <el-icon><Clock /></el-icon>
-                流程中 ({{ pendingCandidates.length }})
+                流程中 ({{ activeCandidates.length }})
               </span>
             </div>
           </template>
           <div class="candidate-list">
             <div
-              v-for="candidate in pendingCandidates"
+              v-for="candidate in activeCandidates"
               :key="candidate.id"
               :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
               @click="selectCandidate(candidate)"
             >
-              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.status) }">
+              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.main_status, candidate.sub_status) }">
                 {{ getAvatarText(getCandidateName(candidate)) }}
               </div>
               <div class="candidate-info">
@@ -53,35 +53,35 @@
                   <span :class="['match-score', getMatchLevel(candidate.match_score)]">
                     {{ candidate.match_score || 0 }}%
                   </span>
-                  <el-tag :type="getStatusType(candidate.status)" size="small" class="status-tag">
-                    {{ getStatusText(candidate.status) }}
+                  <el-tag :type="getStatusType(candidate.main_status, candidate.sub_status)" size="small" class="status-tag">
+                    {{ getStatusDisplayText(candidate.main_status, candidate.sub_status) }}
                   </el-tag>
                 </div>
               </div>
             </div>
-            <div v-if="pendingCandidates.length === 0" class="empty-group">
+            <div v-if="activeCandidates.length === 0" class="empty-group">
               暂无流程中候选人
             </div>
           </div>
         </el-collapse-item>
 
-        <el-collapse-item name="finished" class="status-group finished-group">
+        <el-collapse-item name="terminal" class="status-group terminal-group">
           <template #title>
             <div class="group-header">
               <span class="group-title">
                 <el-icon><CircleCheck /></el-icon>
-                已结束 ({{ finishedCandidates.length }})
+                已结束 ({{ terminalCandidates.length }})
               </span>
             </div>
           </template>
           <div class="candidate-list">
             <div
-              v-for="candidate in finishedCandidates"
+              v-for="candidate in terminalCandidates"
               :key="candidate.id"
               :class="['candidate-item', { selected: selectedCandidate?.id === candidate.id }]"
               @click="selectCandidate(candidate)"
             >
-              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.status) }">
+              <div class="candidate-avatar" :style="{ background: getAvatarColor(candidate.main_status, candidate.sub_status) }">
                 {{ getAvatarText(getCandidateName(candidate)) }}
               </div>
               <div class="candidate-info">
@@ -95,13 +95,13 @@
                   <span :class="['match-score', getMatchLevel(candidate.match_score)]">
                     {{ candidate.match_score || 0 }}%
                   </span>
-                  <el-tag :type="getStatusType(candidate.status)" size="small" class="status-tag">
-                    {{ getStatusText(candidate.status) }}
+                  <el-tag :type="getStatusType(candidate.main_status, candidate.sub_status)" size="small" class="status-tag">
+                    {{ getStatusDisplayText(candidate.main_status, candidate.sub_status) }}
                   </el-tag>
                 </div>
               </div>
             </div>
-            <div v-if="finishedCandidates.length === 0" class="empty-group">
+            <div v-if="terminalCandidates.length === 0" class="empty-group">
               暂无已结束候选人
             </div>
           </div>
@@ -114,6 +114,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { Plus, Document, Clock, CircleCheck } from '@element-plus/icons-vue'
+import { StatusUtils } from '../constants/interviewStatus.js'
 
 const props = defineProps({
   candidates: {
@@ -128,17 +129,21 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'upload', 'view-jd'])
 
-const activeNames = ref(['pending', 'finished'])
+const activeNames = ref(['active', 'terminal'])
 
-const pendingStatuses = ['待沟通', '待面试', '面试中', '谈薪中', '已解析', '未解析']
-const finishedStatuses = ['已成单', '已通过', '已拒绝']
-
-const pendingCandidates = computed(() => {
-  return props.candidates.filter(c => pendingStatuses.includes(c.status))
+// Group candidates based on terminal status
+const activeCandidates = computed(() => {
+  return props.candidates.filter(c => {
+    const isTerminal = StatusUtils.isTerminalStatus(c.main_status, c.sub_status)
+    return !isTerminal
+  })
 })
 
-const finishedCandidates = computed(() => {
-  return props.candidates.filter(c => finishedStatuses.includes(c.status))
+const terminalCandidates = computed(() => {
+  return props.candidates.filter(c => {
+    const isTerminal = StatusUtils.isTerminalStatus(c.main_status, c.sub_status)
+    return isTerminal
+  })
 })
 
 const getAvatarText = (name) => {
@@ -146,19 +151,12 @@ const getAvatarText = (name) => {
   return name.charAt(0).toUpperCase()
 }
 
-const getAvatarColor = (status) => {
-  const colors = {
-    '待沟通': 'linear-gradient(135deg, #e6a23c 0%, #f5a623 100%)',
-    '待面试': 'linear-gradient(135deg, #409eff 0%, #67c4ff 100%)',
-    '面试中': 'linear-gradient(135deg, #67c23a 0%, #85ce61 100%)',
-    '谈薪中': 'linear-gradient(135deg, #fa8c16 0%, #fda23f 100%)',
-    '已成单': 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
-    '已通过': 'linear-gradient(135deg, #67c23a 0%, #95d475 100%)',
-    '已拒绝': 'linear-gradient(135deg, #f56c6c 0%, #f89898 100%)',
-    '未解析': 'linear-gradient(135deg, #909399 0%, #b4b4b8 100%)',
-    '已解析': 'linear-gradient(135deg, #409eff 0%, #79bbff 100%)'
+const getAvatarColor = (mainStatus, subStatus) => {
+  const main = StatusUtils.getMainStatus(mainStatus || 'resume_screening')
+  if (main && main.color) {
+    return `linear-gradient(135deg, ${main.color} 0%, #ffffff 100%)`
   }
-  return colors[status] || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  return 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
 }
 
 const getCandidateName = (candidate) => {
@@ -181,30 +179,32 @@ const getMatchLevel = (score) => {
   return 'low'
 }
 
-const getStatusType = (status) => {
-  const types = {
-    '未解析': 'info',
-    '已解析': 'primary',
-    '待沟通': 'warning',
-    '待面试': 'success',
-    '面试中': 'success',
-    '已通过': 'success',
-    '已拒绝': 'danger'
-  }
-  return types[status] || 'info'
+const getStatusType = (mainStatus, subStatus) => {
+  const isTerminal = StatusUtils.isTerminalStatus(mainStatus, subStatus)
+  const isRejected = StatusUtils.isRejectedStatus(mainStatus, subStatus)
+  const isSuccess = StatusUtils.isSuccessStatus(mainStatus, subStatus)
+  
+  if (isSuccess) return 'success'
+  if (isRejected || isTerminal) return 'danger'
+  if (mainStatus === 'resume_screening') return 'info'
+  if (mainStatus === 'interviewing') return 'warning'
+  if (mainStatus === 'salary_negotiation') return 'primary'
+  return 'info'
 }
 
-const getStatusText = (status) => {
-  const texts = {
-    '未解析': '未解析',
-    '已解析': '已解析',
-    '待沟通': '待沟通',
-    '待面试': '待面试',
-    '面试中': '面试中',
-    '已通过': '已通过',
-    '已拒绝': '已拒绝'
+const getStatusDisplayText = (mainStatus, subStatus) => {
+  if (!mainStatus && !subStatus) {
+    // Fallback for old data
+    return '简历筛选'
   }
-  return texts[status] || status || '未知'
+  
+  const main = StatusUtils.getMainStatus(mainStatus || 'resume_screening')
+  const sub = StatusUtils.getSubStatus(mainStatus, subStatus)
+  
+  if (sub) {
+    return `${main.label}/${sub.label}`
+  }
+  return main.label
 }
 
 const selectCandidate = (candidate) => {
@@ -319,11 +319,11 @@ const selectCandidate = (candidate) => {
   font-size: 14px;
 }
 
-.pending-group :deep(.el-collapse-item__header) {
+.active-group :deep(.el-collapse-item__header) {
   color: #409eff;
 }
 
-.finished-group :deep(.el-collapse-item__header) {
+.terminal-group :deep(.el-collapse-item__header) {
   color: #909399;
 }
 

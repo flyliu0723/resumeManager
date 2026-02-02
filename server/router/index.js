@@ -10,6 +10,9 @@ const interviewFlowRouter = require('./interviewFlow')
 const interviewsRouter = require('./interviews')
 const statsRouter = require('./stats')
 const activitiesRouter = require('./activities')
+const interviewRoundsRouter = require('./interviewRounds')
+const interviewRejectionsRouter = require('./interviewRejections')
+const dashboardRouter = require('./dashboard')
 
 const router = express.Router()
 
@@ -24,5 +27,9 @@ router.use('/interview-flow', interviewFlowRouter)
 router.use('/interviews', interviewsRouter)
 router.use('/stats', statsRouter)
 router.use('/activities', activitiesRouter)
+// 新状态系统路由
+router.use('/interview-rounds', interviewRoundsRouter)
+router.use('/interview-rejections', interviewRejectionsRouter)
+router.use('/dashboard', dashboardRouter)
 
 module.exports = router

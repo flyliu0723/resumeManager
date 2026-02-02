@@ -2,8 +2,16 @@ const initSqlJs = require('sql.js')
 const fs = require('fs')
 const path = require('path')
 
-const dbPath = path.join(__dirname, 'resume.db')
+// 检测是否在 pkg 打包环境中，决定数据库路径
+const isPackaged = process.pkg !== undefined
+const DATA_DIR = isPackaged 
+  ? path.dirname(process.execPath)  // exe 所在目录
+  : __dirname  // server 目录
+
+const dbPath = path.join(DATA_DIR, 'resume.db')
 let db = null
+
+console.log(`[DB] 数据库路径: ${dbPath}`)
 
 async function initDatabase() {
   const SQL = await initSqlJs()
@@ -54,6 +62,32 @@ async function initDatabase() {
     if (!columns.includes('archived_at')) {
       db.run('ALTER TABLE positions ADD COLUMN archived_at DATETIME')
       console.log('添加 archived_at 字段')
+    }
+    
+    // JD 解析相关字段
+    if (!columns.includes('parsed_skills')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_skills TEXT')
+      console.log('添加 parsed_skills 字段')
+    }
+    if (!columns.includes('parsed_education')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_education TEXT')
+      console.log('添加 parsed_education 字段')
+    }
+    if (!columns.includes('parsed_experience')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_experience TEXT')
+      console.log('添加 parsed_experience 字段')
+    }
+    if (!columns.includes('parsed_companies')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_companies TEXT')
+      console.log('添加 parsed_companies 字段')
+    }
+    if (!columns.includes('parsed_at')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_at DATETIME')
+      console.log('添加 parsed_at 字段')
+    }
+    if (!columns.includes('parsed_jd_content')) {
+      db.run('ALTER TABLE positions ADD COLUMN parsed_jd_content TEXT')
+      console.log('添加 parsed_jd_content 字段')
     }
   }
   
@@ -129,19 +163,27 @@ async function initDatabase() {
         questions TEXT,
         status TEXT DEFAULT '待沟通',
         current_status TEXT DEFAULT '待沟通',
+        -- 新状态系统字段
+        main_status TEXT DEFAULT 'resume_screening',
+        sub_status TEXT DEFAULT 'pending_review',
+        interview_round INTEGER DEFAULT 0,
+        current_round_id INTEGER,
         matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         flow_start_at DATETIME,
+        update_time DATETIME,
+        next_interview_at DATETIME,
         FOREIGN KEY (resume_id) REFERENCES resumes(id),
         FOREIGN KEY (position_id) REFERENCES positions(id),
         UNIQUE(resume_id, position_id)
       )
     `)
-    console.log('创建 position_resumes 表')
+    console.log('创建 position_resumes 表（含新状态系统字段）')
   } else {
-    // 检查并添加 current_status 和 flow_start_at 字段
+    // 检查并添加新状态系统字段
     const columnCheck = db.exec("PRAGMA table_info(position_resumes)")
     const columns = columnCheck.length > 0 ? columnCheck[0].values.map(row => row[1]) : []
     
+    // 旧字段（保留兼容性）
     if (!columns.includes('current_status')) {
       db.run('ALTER TABLE position_resumes ADD COLUMN current_status TEXT DEFAULT "待沟通"')
       console.log('添加 current_status 字段到 position_resumes 表')
@@ -157,6 +199,24 @@ async function initDatabase() {
     if (!columns.includes('next_interview_at')) {
       db.run('ALTER TABLE position_resumes ADD COLUMN next_interview_at DATETIME')
       console.log('添加 next_interview_at 字段到 position_resumes 表')
+    }
+    
+    // 新状态系统字段
+    if (!columns.includes('main_status')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN main_status TEXT DEFAULT "resume_screening"')
+      console.log('添加 main_status 字段到 position_resumes 表')
+    }
+    if (!columns.includes('sub_status')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN sub_status TEXT DEFAULT "pending_review"')
+      console.log('添加 sub_status 字段到 position_resumes 表')
+    }
+    if (!columns.includes('interview_round')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN interview_round INTEGER DEFAULT 0')
+      console.log('添加 interview_round 字段到 position_resumes 表')
+    }
+    if (!columns.includes('current_round_id')) {
+      db.run('ALTER TABLE position_resumes ADD COLUMN current_round_id INTEGER')
+      console.log('添加 current_round_id 字段到 position_resumes 表')
     }
   }
 
@@ -176,6 +236,39 @@ async function initDatabase() {
       )
     `)
     console.log('创建 position_resume_flow_logs 表')
+  } else {
+    // 增强 flow_logs 表字段（新状态系统）
+    const flowColumns = db.exec("PRAGMA table_info(position_resume_flow_logs)")
+    const flowCols = flowColumns.length > 0 ? flowColumns[0].values.map(row => row[1]) : []
+    
+    if (!flowCols.includes('main_status_from')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN main_status_from TEXT')
+      console.log('添加 main_status_from 字段到 flow_logs')
+    }
+    if (!flowCols.includes('main_status_to')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN main_status_to TEXT')
+      console.log('添加 main_status_to 字段到 flow_logs')
+    }
+    if (!flowCols.includes('sub_status_from')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN sub_status_from TEXT')
+      console.log('添加 sub_status_from 字段到 flow_logs')
+    }
+    if (!flowCols.includes('sub_status_to')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN sub_status_to TEXT')
+      console.log('添加 sub_status_to 字段到 flow_logs')
+    }
+    if (!flowCols.includes('round_id')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN round_id INTEGER')
+      console.log('添加 round_id 字段到 flow_logs')
+    }
+    if (!flowCols.includes('action_type')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN action_type TEXT')
+      console.log('添加 action_type 字段到 flow_logs')
+    }
+    if (!flowCols.includes('metadata_json')) {
+      db.run('ALTER TABLE position_resume_flow_logs ADD COLUMN metadata_json TEXT')
+      console.log('添加 metadata_json 字段到 flow_logs')
+    }
   }
 
   // 职位补充信息表
@@ -191,6 +284,52 @@ async function initDatabase() {
       )
     `)
     console.log('创建 position_notes 表')
+  }
+
+  // 面试轮次表（新状态系统）
+  const interviewRoundsCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_rounds'")
+  if (interviewRoundsCheck.length === 0) {
+    db.run(`
+      CREATE TABLE interview_rounds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER NOT NULL,
+        round_number INTEGER NOT NULL,
+        round_type TEXT,
+        interviewer_id INTEGER,
+        interviewer_name TEXT,
+        interviewer_role TEXT,
+        scheduled_at DATETIME,
+        duration_minutes INTEGER,
+        location TEXT,
+        status TEXT DEFAULT 'pending',
+        result TEXT,
+        result_reason TEXT,
+        feedback_json TEXT,
+        candidate_feedback TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY (match_id) REFERENCES position_resumes(id)
+      )
+    `)
+    console.log('创建 interview_rounds 表')
+  }
+
+  // 面试评价维度表（新状态系统）
+  const interviewFeedbacksCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_feedbacks'")
+  if (interviewFeedbacksCheck.length === 0) {
+    db.run(`
+      CREATE TABLE interview_feedbacks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        round_id INTEGER NOT NULL,
+        dimension_name TEXT NOT NULL,
+        score INTEGER,
+        weight REAL DEFAULT 1.0,
+        comment TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (round_id) REFERENCES interview_rounds(id)
+      )
+    `)
+    console.log('创建 interview_feedbacks 表')
   }
 
   // AI 配置表
@@ -245,6 +384,38 @@ async function initDatabase() {
     db.run('CREATE INDEX idx_interview_events_candidate_id ON interview_events(candidate_id)')
     db.run('CREATE INDEX idx_interview_events_position_id ON interview_events(position_id)')
     console.log('创建 interview_events 索引')
+  }
+
+  // 面试拒绝记录表（新状态系统）
+  const interviewRejectionsCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_rejections'")
+  if (interviewRejectionsCheck.length === 0) {
+    db.run(`
+      CREATE TABLE interview_rejections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER NOT NULL,
+        rejected_at_stage TEXT NOT NULL,
+        rejected_at_sub_status TEXT,
+        rejection_category TEXT,
+        rejection_reason_code TEXT,
+        rejection_reason_detail TEXT,
+        rejected_by INTEGER,
+        rejected_by_name TEXT,
+        rejected_by_role TEXT,
+        internal_notes TEXT,
+        candidate_feedback TEXT,
+        is_reopenable INTEGER DEFAULT 0,
+        reopen_conditions TEXT,
+        related_round_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY (match_id) REFERENCES position_resumes(id),
+        FOREIGN KEY (related_round_id) REFERENCES interview_rounds(id)
+      )
+    `)
+    db.run('CREATE INDEX idx_rejections_match_id ON interview_rejections(match_id)')
+    db.run('CREATE INDEX idx_rejections_stage ON interview_rejections(rejected_at_stage)')
+    db.run('CREATE INDEX idx_rejections_category ON interview_rejections(rejection_category)')
+    console.log('创建 interview_rejections 表')
   }
 
   saveDatabase()
@@ -327,7 +498,39 @@ const positionStmt = {
   getAll: () => all('SELECT * FROM positions ORDER BY created_at DESC'),
   getActive: () => all("SELECT * FROM positions WHERE status = 'active' ORDER BY created_at DESC"),
   getArchived: () => all("SELECT * FROM positions WHERE status = 'archived' ORDER BY archived_at DESC"),
-  getById: (id) => get('SELECT * FROM positions WHERE id = ?', [Number(id)])
+  getById: (id) => get('SELECT * FROM positions WHERE id = ?', [Number(id)]),
+  
+  // 更新JD解析结果
+  updateParsedJD: (id, parsedData) => {
+    const { skills, education, experience, companies, jdContent } = parsedData
+    run(
+      'UPDATE positions SET parsed_skills = ?, parsed_education = ?, parsed_experience = ?, parsed_companies = ?, parsed_jd_content = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [
+        skills ? JSON.stringify(skills) : null,
+        education || null,
+        experience || null,
+        companies ? JSON.stringify(companies) : null,
+        jdContent || null,
+        Number(id)
+      ]
+    )
+  },
+  
+  // 更新单个解析字段（用于编辑）
+  updateParsedField: (id, field, value) => {
+    const allowedFields = ['parsed_skills', 'parsed_education', 'parsed_experience', 'parsed_companies']
+    if (!allowedFields.includes(field)) {
+      throw new Error('Invalid field name')
+    }
+    
+    if (field === 'parsed_skills' || field === 'parsed_companies') {
+      // JSON字段
+      run(`UPDATE positions SET ${field} = ? WHERE id = ?`, [value ? JSON.stringify(value) : null, Number(id)])
+    } else {
+      // 普通文本字段
+      run(`UPDATE positions SET ${field} = ? WHERE id = ?`, [value || null, Number(id)])
+    }
+  }
 }
 
 const companyStmt = {
@@ -439,6 +642,7 @@ const positionResumeStmt = {
     const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
     run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
   },
+  // 旧版updateStatus（兼容）
   updateStatus: (id, status, note, jdSupplement, updateFlowStartAt = false, nextInterviewAt = null) => {
     let sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ?, update_time = CURRENT_TIMESTAMP'
     const params = [String(status), String(status), String(jdSupplement || ''), Number(id)]
@@ -457,6 +661,53 @@ const positionResumeStmt = {
     sql += ' WHERE id = ?'
     run(sql, params)
   },
+
+  // 新版updateStatus（支持新状态系统）
+  updateStatusNew: (id, mainStatus, subStatus, options = {}) => {
+    const {
+      interviewRound = null,
+      currentRoundId = null,
+      nextInterviewAt = null,
+      updateFlowStartAt = false
+    } = options
+
+    let sql = 'UPDATE position_resumes SET main_status = ?, sub_status = ?, current_status = ?, status = ?, update_time = CURRENT_TIMESTAMP'
+    const params = [String(mainStatus), String(subStatus), String(subStatus), String(subStatus)]
+
+    if (interviewRound !== null) {
+      sql += ', interview_round = ?'
+      params.push(Number(interviewRound))
+    }
+
+    if (currentRoundId !== null) {
+      sql += ', current_round_id = ?'
+      params.push(Number(currentRoundId))
+    }
+
+    if (nextInterviewAt !== undefined) {
+      if (nextInterviewAt) {
+        sql += ', next_interview_at = ?'
+        params.push(String(nextInterviewAt))
+      } else {
+        sql += ', next_interview_at = NULL'
+      }
+    }
+
+    if (updateFlowStartAt) {
+      sql += ', flow_start_at = CURRENT_TIMESTAMP'
+    }
+
+    sql += ' WHERE id = ?'
+    params.push(Number(id))
+
+    run(sql, params)
+  },
+
+  // 更新面试轮次信息
+  updateInterviewRound: (id, interviewRound, currentRoundId) => {
+    run('UPDATE position_resumes SET interview_round = ?, current_round_id = ? WHERE id = ?', 
+      [Number(interviewRound), currentRoundId ? Number(currentRoundId) : null, Number(id)])
+  },
   updateJdSupplement: (id, jdSupplement) => {
     run('UPDATE position_resumes SET jd_supplement = ? WHERE id = ?', [String(jdSupplement || ''), Number(id)])
   },
@@ -465,6 +716,7 @@ const positionResumeStmt = {
 }
 
 const flowLogStmt = {
+  // 旧版insert（兼容）
   insert: (matchId, fromStatus, toStatus, note, jdSupplement) => {
     const result = db.run(
       'INSERT INTO position_resume_flow_logs (match_id, from_status, to_status, note, jd_supplement) VALUES (?, ?, ?, ?, ?)',
@@ -473,9 +725,56 @@ const flowLogStmt = {
     saveDatabase()
     return { lastInsertRowid: result.lastInsertRowid }
   },
+
+  // 新版insert（支持新状态系统）
+  insertWithNewStatus: (matchId, mainStatusFrom, mainStatusTo, subStatusFrom, subStatusTo, options = {}) => {
+    const {
+      actionType = 'status_change',
+      note = '',
+      roundId = null,
+      metadata = null
+    } = options
+
+    const result = db.run(
+      `INSERT INTO position_resume_flow_logs 
+       (match_id, from_status, to_status, main_status_from, main_status_to, sub_status_from, sub_status_to, 
+        action_type, note, round_id, metadata_json, jd_supplement) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        Number(matchId),
+        String(subStatusFrom || ''),
+        String(subStatusTo || ''),
+        String(mainStatusFrom || ''),
+        String(mainStatusTo || ''),
+        String(subStatusFrom || ''),
+        String(subStatusTo || ''),
+        String(actionType),
+        String(note || ''),
+        roundId ? Number(roundId) : null,
+        metadata ? JSON.stringify(metadata) : null,
+        ''
+      ]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+
   getByMatchId: (matchId) => {
     return all('SELECT * FROM position_resume_flow_logs WHERE match_id = ? ORDER BY created_at ASC', [Number(matchId)])
   },
+
+  getByMatchIdWithDetails: (matchId) => {
+    return all(`
+      SELECT 
+        fl.*,
+        ir.round_number as related_round_number
+      FROM position_resume_flow_logs fl
+      LEFT JOIN interview_rounds ir ON fl.round_id = ir.id
+      WHERE fl.match_id = ?
+      ORDER BY fl.created_at ASC
+    `, [Number(matchId)])
+  },
+
   delete: (id) => run('DELETE FROM position_resume_flow_logs WHERE id = ?', [Number(id)])
 }
 
@@ -757,6 +1056,367 @@ const interviewEventStmt = {
   }
 }
 
+// 面试轮次表 DAO（新状态系统）
+const interviewRoundStmt = {
+  // 创建面试轮次
+  insert: (matchId, roundNumber, options = {}) => {
+    const {
+      roundType = null,
+      interviewerId = null,
+      interviewerName = null,
+      interviewerRole = null,
+      scheduledAt = null,
+      durationMinutes = null,
+      location = null
+    } = options
+
+    const result = db.run(
+      `INSERT INTO interview_rounds 
+       (match_id, round_number, round_type, interviewer_id, interviewer_name, interviewer_role, 
+        scheduled_at, duration_minutes, location, status, created_at, updated_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [
+        Number(matchId),
+        Number(roundNumber),
+        roundType ? String(roundType) : null,
+        interviewerId ? Number(interviewerId) : null,
+        interviewerName ? String(interviewerName) : null,
+        interviewerRole ? String(interviewerRole) : null,
+        scheduledAt ? String(scheduledAt) : null,
+        durationMinutes ? Number(durationMinutes) : null,
+        location ? String(location) : null
+      ]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+
+  // 更新面试轮次状态和结果
+  updateStatus: (id, options = {}) => {
+    const {
+      status = null,
+      result = null,
+      resultReason = null,
+      feedbackJson = null,
+      candidateFeedback = null
+    } = options
+
+    let sql = 'UPDATE interview_rounds SET updated_at = CURRENT_TIMESTAMP'
+    const params = []
+
+    if (status) {
+      sql += ', status = ?'
+      params.push(String(status))
+    }
+    if (result) {
+      sql += ', result = ?'
+      params.push(String(result))
+    }
+    if (resultReason !== undefined) {
+      sql += ', result_reason = ?'
+      params.push(resultReason ? String(resultReason) : null)
+    }
+    if (feedbackJson !== undefined) {
+      sql += ', feedback_json = ?'
+      params.push(feedbackJson ? JSON.stringify(feedbackJson) : null)
+    }
+    if (candidateFeedback !== undefined) {
+      sql += ', candidate_feedback = ?'
+      params.push(candidateFeedback ? String(candidateFeedback) : null)
+    }
+
+    sql += ' WHERE id = ?'
+    params.push(Number(id))
+
+    return run(sql, params)
+  },
+
+  // 根据ID查询
+  getById: (id) => {
+    return get('SELECT * FROM interview_rounds WHERE id = ?', [Number(id)])
+  },
+
+  // 查询match的所有轮次
+  getByMatchId: (matchId) => {
+    return all(
+      'SELECT * FROM interview_rounds WHERE match_id = ? ORDER BY round_number ASC, created_at ASC',
+      [Number(matchId)]
+    )
+  },
+
+  // 查询当前进行的轮次
+  getCurrentRound: (matchId) => {
+    return get(
+      `SELECT * FROM interview_rounds 
+       WHERE match_id = ? AND status IN ('pending', 'scheduled') 
+       ORDER BY round_number ASC, created_at DESC 
+       LIMIT 1`,
+      [Number(matchId)]
+    )
+  },
+
+  // 查询已完成的轮次
+  getCompletedRounds: (matchId) => {
+    return all(
+      `SELECT * FROM interview_rounds 
+       WHERE match_id = ? AND status = 'completed' 
+       ORDER BY round_number ASC`,
+      [Number(matchId)]
+    )
+  },
+
+  // 删除轮次
+  delete: (id) => {
+    return run('DELETE FROM interview_rounds WHERE id = ?', [Number(id)])
+  },
+
+  // 删除match的所有轮次
+  deleteByMatchId: (matchId) => {
+    return run('DELETE FROM interview_rounds WHERE match_id = ?', [Number(matchId)])
+  }
+}
+
+// 面试评价维度表 DAO（新状态系统）
+const interviewFeedbackStmt = {
+  // 创建评价维度
+  insert: (roundId, dimensionName, options = {}) => {
+    const { score = null, weight = 1.0, comment = null } = options
+
+    const result = db.run(
+      `INSERT INTO interview_feedbacks (round_id, dimension_name, score, weight, comment) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        Number(roundId),
+        String(dimensionName),
+        score ? Number(score) : null,
+        Number(weight),
+        comment ? String(comment) : null
+      ]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+
+  // 批量创建评价维度
+  insertBatch: (roundId, dimensions) => {
+    const results = []
+    for (const dim of dimensions) {
+      const result = interviewFeedbackStmt.insert(roundId, dim.name, {
+        score: dim.score,
+        weight: dim.weight || 1.0,
+        comment: dim.comment
+      })
+      results.push(result)
+    }
+    return results
+  },
+
+  // 更新评价
+  update: (id, options = {}) => {
+    const { score = null, weight = null, comment = null } = options
+
+    let sql = 'UPDATE interview_feedbacks SET'
+    const params = []
+    const updates = []
+
+    if (score !== undefined) {
+      updates.push('score = ?')
+      params.push(score ? Number(score) : null)
+    }
+    if (weight !== undefined) {
+      updates.push('weight = ?')
+      params.push(Number(weight))
+    }
+    if (comment !== undefined) {
+      updates.push('comment = ?')
+      params.push(comment ? String(comment) : null)
+    }
+
+    if (updates.length === 0) return { changes: 0 }
+
+    sql += ' ' + updates.join(', ') + ' WHERE id = ?'
+    params.push(Number(id))
+
+    return run(sql, params)
+  },
+
+  // 根据ID查询
+  getById: (id) => {
+    return get('SELECT * FROM interview_feedbacks WHERE id = ?', [Number(id)])
+  },
+
+  // 查询轮次的所有评价维度
+  getByRoundId: (roundId) => {
+    return all(
+      'SELECT * FROM interview_feedbacks WHERE round_id = ? ORDER BY created_at ASC',
+      [Number(roundId)]
+    )
+  },
+
+  // 计算加权平均分
+  calculateWeightedScore: (roundId) => {
+    const result = get(
+      `SELECT 
+        SUM(score * weight) as weighted_sum,
+        SUM(weight) as total_weight,
+        COUNT(*) as dimension_count
+       FROM interview_feedbacks 
+       WHERE round_id = ? AND score IS NOT NULL`,
+      [Number(roundId)]
+    )
+    
+    if (!result || !result.total_weight) return null
+    
+    return {
+      weightedScore: result.weighted_sum / result.total_weight,
+      totalWeight: result.total_weight,
+      dimensionCount: result.dimension_count
+    }
+  },
+
+  // 删除评价维度
+  delete: (id) => {
+    return run('DELETE FROM interview_feedbacks WHERE id = ?', [Number(id)])
+  },
+
+  // 删除轮次的所有评价
+  deleteByRoundId: (roundId) => {
+    return run('DELETE FROM interview_feedbacks WHERE round_id = ?', [Number(roundId)])
+  }
+}
+
+// 面试拒绝记录表 DAO（新状态系统）
+const interviewRejectionStmt = {
+  // 创建拒绝记录
+  insert: (matchId, options = {}) => {
+    const {
+      rejectedAtStage,
+      rejectedAtSubStatus = null,
+      rejectionCategory = null,
+      rejectionReasonCode = null,
+      rejectionReasonDetail = null,
+      rejectedBy = null,
+      rejectedByName = null,
+      rejectedByRole = null,
+      internalNotes = null,
+      candidateFeedback = null,
+      isReopenable = 0,
+      reopenConditions = null,
+      relatedRoundId = null
+    } = options
+
+    const result = db.run(
+      `INSERT INTO interview_rejections (
+        match_id, rejected_at_stage, rejected_at_sub_status,
+        rejection_category, rejection_reason_code, rejection_reason_detail,
+        rejected_by, rejected_by_name, rejected_by_role,
+        internal_notes, candidate_feedback,
+        is_reopenable, reopen_conditions, related_round_id, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [
+        Number(matchId),
+        String(rejectedAtStage),
+        rejectedAtSubStatus ? String(rejectedAtSubStatus) : null,
+        rejectionCategory ? String(rejectionCategory) : null,
+        rejectionReasonCode ? String(rejectionReasonCode) : null,
+        rejectionReasonDetail ? String(rejectionReasonDetail) : null,
+        rejectedBy ? Number(rejectedBy) : null,
+        rejectedByName ? String(rejectedByName) : null,
+        rejectedByRole ? String(rejectedByRole) : null,
+        internalNotes ? String(internalNotes) : null,
+        candidateFeedback ? String(candidateFeedback) : null,
+        isReopenable ? 1 : 0,
+        reopenConditions ? String(reopenConditions) : null,
+        relatedRoundId ? Number(relatedRoundId) : null
+      ]
+    )
+    saveDatabase()
+    return { lastInsertRowid: result.lastInsertRowid }
+  },
+
+  // 根据ID查询
+  getById: (id) => {
+    return get('SELECT * FROM interview_rejections WHERE id = ?', [Number(id)])
+  },
+
+  // 查询match的拒绝记录
+  getByMatchId: (matchId) => {
+    return all(
+      'SELECT * FROM interview_rejections WHERE match_id = ? ORDER BY created_at DESC',
+      [Number(matchId)]
+    )
+  },
+
+  // 按拒绝阶段统计
+  getStatsByStage: (startDate, endDate) => {
+    return all(
+      `SELECT 
+        rejected_at_stage,
+        rejection_category,
+        COUNT(*) as count
+      FROM interview_rejections 
+      WHERE created_at >= ? AND created_at <= ?
+      GROUP BY rejected_at_stage, rejection_category
+      ORDER BY count DESC`,
+      [String(startDate), String(endDate)]
+    )
+  },
+
+  // 按拒绝原因统计
+  getStatsByReason: (startDate, endDate) => {
+    return all(
+      `SELECT 
+        rejection_reason_code,
+        COUNT(*) as count
+      FROM interview_rejections 
+      WHERE created_at >= ? AND created_at <= ?
+      GROUP BY rejection_reason_code
+      ORDER BY count DESC`,
+      [String(startDate), String(endDate)]
+    )
+  },
+
+  // 更新拒绝记录（如允许重新打开）
+  update: (id, options = {}) => {
+    const {
+      isReopenable = null,
+      reopenConditions = null,
+      internalNotes = null
+    } = options
+
+    let sql = 'UPDATE interview_rejections SET updated_at = CURRENT_TIMESTAMP'
+    const params = []
+
+    if (isReopenable !== null) {
+      sql += ', is_reopenable = ?'
+      params.push(isReopenable ? 1 : 0)
+    }
+    if (reopenConditions !== undefined) {
+      sql += ', reopen_conditions = ?'
+      params.push(reopenConditions ? String(reopenConditions) : null)
+    }
+    if (internalNotes !== undefined) {
+      sql += ', internal_notes = ?'
+      params.push(internalNotes ? String(internalNotes) : null)
+    }
+
+    sql += ' WHERE id = ?'
+    params.push(Number(id))
+
+    return run(sql, params)
+  },
+
+  // 删除拒绝记录
+  delete: (id) => {
+    return run('DELETE FROM interview_rejections WHERE id = ?', [Number(id)])
+  },
+
+  // 删除match的所有拒绝记录
+  deleteByMatchId: (matchId) => {
+    return run('DELETE FROM interview_rejections WHERE match_id = ?', [Number(matchId)])
+  }
+}
+
 module.exports = {
   initDatabase,
   positionStmt,
@@ -767,5 +1427,8 @@ module.exports = {
   flowLogStmt,
   aiConfigStmt,
   interviewEventStmt,
+  interviewRoundStmt,      // 面试轮次表 DAO（新状态系统）
+  interviewFeedbackStmt,   // 面试评价维度表 DAO（新状态系统）
+  interviewRejectionStmt,  // 面试拒绝记录表 DAO（新状态系统）
   db
 }

@@ -25,6 +25,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+backend.log
+server.log
 
 # OS files
 .DS_Store
@@ -49,6 +51,27 @@ server/parser/resume_parser/models
 # Temporary files
 *.tmp
 *.temp
-
-node_modules/
 nul
+
+# Distribution packages
+*.exe
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# Release directories
+release/
+app/
+
+# Build scripts (user-specific)
+build*.bat
+start.bat
+exclude.txt
+
+# AI assistant work files
+.opencode.md
+GEMINI.md
+
+# Migration reports (keep in repo but can be ignored if needed)
+# MIGRATION_REPORT*.md
