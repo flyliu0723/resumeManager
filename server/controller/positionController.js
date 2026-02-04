@@ -81,7 +81,12 @@ const positionController = {
 
   delete: (req, res) => {
     try {
-      const result = positionStmt.delete(Number(req.params.id))
+      const id = Number(req.params.id)
+      
+      // 先清理推荐匹配数据
+      positionStmt.clearRecommendations(id)
+      
+      const result = positionStmt.delete(id)
       if (result.changes) {
         success(res, null, '删除成功')
       } else {
@@ -95,9 +100,14 @@ const positionController = {
   archive: (req, res) => {
     try {
       const { reason } = req.body
-      const result = positionStmt.archive(req.params.id, reason)
+      const id = req.params.id
+      
+      // 归档时清理推荐匹配数据（减少无效数据，提高查询效率）
+      positionStmt.clearRecommendations(id)
+      
+      const result = positionStmt.archive(id, reason)
       if (result.changes) {
-        const position = positionStmt.getById(req.params.id)
+        const position = positionStmt.getById(id)
         success(res, position)
       } else {
         error(res, '职位不存在', 404)

@@ -124,15 +124,9 @@ export const SUB_STATUS = {
       label: '已发Offer',
       color: '#409EFF',
       action: '已发送Offer，等待候选人确认',
-      nextOptions: ['offer_accepted', 'offer_rejected']
+      nextOptions: ['offer_rejected']
     },
-    OFFER_ACCEPTED: {
-      code: 'offer_accepted',
-      label: '已接受',
-      color: '#67C23A',
-      action: '候选人接受Offer，准备入职',
-      nextOptions: ['pending_onboard']
-    },
+    // 注意：候选人接受后直接进入已成单主状态，不在谈薪中停留
     OFFER_REJECTED: {
       code: 'offer_rejected',
       label: '拒绝Offer',
@@ -170,6 +164,57 @@ export const SUB_STATUS = {
       color: '#F56C6C',
       action: '候选人入职前放弃，流程结束',
       isTerminal: true
+    }
+  },
+  rejected: {
+    // 各阶段的不合适/拒绝状态聚合在主状态rejected下
+    SCREENING_REJECTED: {
+      code: 'screening_rejected',
+      label: '简历筛选不合适',
+      color: '#F56C6C',
+      action: '简历筛选阶段标记为不合适',
+      isTerminal: true,
+      category: 'screening'
+    },
+    INTERVIEW_REJECTED: {
+      code: 'interview_rejected',
+      label: '面试不通过',
+      color: '#F56C6C',
+      action: '面试阶段标记为不合适',
+      isTerminal: true,
+      category: 'interview'
+    },
+    SALARY_REJECTED: {
+      code: 'salary_rejected',
+      label: '谈薪失败',
+      color: '#F56C6C',
+      action: '谈薪阶段未达成一致',
+      isTerminal: true,
+      category: 'salary'
+    },
+    OFFER_REJECTED: {
+      code: 'offer_rejected',
+      label: '拒绝Offer',
+      color: '#F56C6C',
+      action: '候选人拒绝Offer',
+      isTerminal: true,
+      category: 'salary'
+    },
+    ONBOARD_ABANDONED_MAIN: {
+      code: 'onboard_abandoned',
+      label: '放弃入职',
+      color: '#F56C6C',
+      action: '入职前放弃',
+      isTerminal: true,
+      category: 'onboard'
+    },
+    GENERAL_REJECTED: {
+      code: 'general_rejected',
+      label: '其他不合适',
+      color: '#F56C6C',
+      action: '其他原因标记为不合适',
+      isTerminal: true,
+      category: 'other'
     }
   }
 }

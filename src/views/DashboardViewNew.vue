@@ -3,66 +3,8 @@
     <h1 class="dashboard-title">招聘管理中心</h1>
     
     <div class="dashboard-layout">
-      <!-- 左侧栏 - 2份 -->
+      <!-- 左侧栏 - 操作动态 -->
       <div class="left-panel">
-        <!-- 数据统计卡片 - 新状态系统 -->
-        <div class="stats-grid">
-          <div class="stat-card blue">
-            <div class="stat-icon">
-              <el-icon><Document /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">简历筛选</div>
-              <div class="stat-value">{{ newStatsData.resumeScreening }}</div>
-              <div class="stat-sub">待审核 {{ newStatsData.pendingReview }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card orange">
-            <div class="stat-icon">
-              <el-icon><UserFilled /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">面试中</div>
-              <div class="stat-value">{{ newStatsData.interviewing }}</div>
-              <div class="stat-sub">待安排 {{ newStatsData.roundPending }} | 已安排 {{ newStatsData.roundScheduled }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card yellow">
-            <div class="stat-icon">
-              <el-icon><Money /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">谈薪中</div>
-              <div class="stat-value">{{ newStatsData.salaryNegotiation }}</div>
-              <div class="stat-sub">待审批 {{ newStatsData.approvalPending }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card green">
-            <div class="stat-icon">
-              <el-icon><CircleCheck /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">已成单</div>
-              <div class="stat-value">{{ newStatsData.closed }}</div>
-              <div class="stat-sub">已入职 {{ newStatsData.onboarded }} | 待入职 {{ newStatsData.pendingOnboard }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card red">
-            <div class="stat-icon">
-              <el-icon><CircleClose /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">已结束</div>
-              <div class="stat-value">{{ newStatsData.rejected }}</div>
-              <div class="stat-sub">本月 {{ newStatsData.rejectedThisMonth }}</div>
-            </div>
-          </div>
-        </div>
-        
         <!-- 实时动态流 -->
         <div class="activity-feed">
           <div class="feed-header">
@@ -110,7 +52,9 @@
                 <h4 class="stage-title">
                   <el-icon><Document /></el-icon>
                   简历筛选
-                  <el-tag size="small" type="info">{{ funnelData.resumeScreening.length }}</el-tag>
+                  <el-tooltip :content="`共 ${funnelData.resumeScreening.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="info" class="count-tag">{{ funnelData.resumeScreening.length }}</el-tag>
+                  </el-tooltip>
                 </h4>
               </div>
               <div class="stage-candidates">
@@ -122,8 +66,10 @@
                   </div>
                   <div class="candidate-days" v-if="candidate.daysInStage > 0">{{ candidate.daysInStage }}天</div>
                 </div>
-                <div class="candidate-more" v-if="funnelData.resumeScreening.length > 5">
-                  还有 {{ funnelData.resumeScreening.length - 5 }} 人...
+                <div class="candidate-more" v-if="funnelData.resumeScreening.length > 5" @click="viewAllCandidates('resume_screening')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.resumeScreening.length - 5 }} 人，查看全部
+                  </el-button>
                 </div>
                 <el-empty v-if="funnelData.resumeScreening.length === 0" description="暂无数据" :image-size="60" />
               </div>
@@ -134,7 +80,9 @@
                 <h4 class="stage-title">
                   <el-icon><UserFilled /></el-icon>
                   面试中
-                  <el-tag size="small" type="primary">{{ funnelData.interviewing.length }}</el-tag>
+                  <el-tooltip :content="`共 ${funnelData.interviewing.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="primary" class="count-tag">{{ funnelData.interviewing.length }}</el-tag>
+                  </el-tooltip>
                 </h4>
               </div>
               <div class="stage-candidates">
@@ -148,8 +96,10 @@
                     {{ getSubStatusLabel(candidate.subStatus) }}
                   </div>
                 </div>
-                <div class="candidate-more" v-if="funnelData.interviewing.length > 5">
-                  还有 {{ funnelData.interviewing.length - 5 }} 人...
+                <div class="candidate-more" v-if="funnelData.interviewing.length > 5" @click="viewAllCandidates('interviewing')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.interviewing.length - 5 }} 人，查看全部
+                  </el-button>
                 </div>
                 <el-empty v-if="funnelData.interviewing.length === 0" description="暂无数据" :image-size="60" />
               </div>
@@ -160,7 +110,9 @@
                 <h4 class="stage-title">
                   <el-icon><Money /></el-icon>
                   谈薪中
-                  <el-tag size="small" type="warning">{{ funnelData.salaryNegotiation.length }}</el-tag>
+                  <el-tooltip :content="`共 ${funnelData.salaryNegotiation.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="warning" class="count-tag">{{ funnelData.salaryNegotiation.length }}</el-tag>
+                  </el-tooltip>
                 </h4>
               </div>
               <div class="stage-candidates">
@@ -174,8 +126,10 @@
                     {{ getSubStatusLabel(candidate.subStatus) }}
                   </div>
                 </div>
-                <div class="candidate-more" v-if="funnelData.salaryNegotiation.length > 5">
-                  还有 {{ funnelData.salaryNegotiation.length - 5 }} 人...
+                <div class="candidate-more" v-if="funnelData.salaryNegotiation.length > 5" @click="viewAllCandidates('salary_negotiation')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.salaryNegotiation.length - 5 }} 人，查看全部
+                  </el-button>
                 </div>
                 <el-empty v-if="funnelData.salaryNegotiation.length === 0" description="暂无数据" :image-size="60" />
               </div>
@@ -186,7 +140,9 @@
                 <h4 class="stage-title">
                   <el-icon><CircleCheck /></el-icon>
                   已成单
-                  <el-tag size="small" type="success">{{ funnelData.closed.length }}</el-tag>
+                  <el-tooltip :content="`共 ${funnelData.closed.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="success" class="count-tag">{{ funnelData.closed.length }}</el-tag>
+                  </el-tooltip>
                 </h4>
               </div>
               <div class="stage-candidates">
@@ -200,8 +156,10 @@
                     {{ getSubStatusLabel(candidate.subStatus) }}
                   </div>
                 </div>
-                <div class="candidate-more" v-if="funnelData.closed.length > 5">
-                  还有 {{ funnelData.closed.length - 5 }} 人...
+                <div class="candidate-more" v-if="funnelData.closed.length > 5" @click="viewAllCandidates('closed')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.closed.length - 5 }} 人，查看全部
+                  </el-button>
                 </div>
                 <el-empty v-if="funnelData.closed.length === 0" description="暂无数据" :image-size="60" />
               </div>
@@ -212,7 +170,9 @@
                 <h4 class="stage-title">
                   <el-icon><CircleClose /></el-icon>
                   已结束
-                  <el-tag size="small" type="danger">{{ funnelData.rejected.length }}</el-tag>
+                  <el-tooltip :content="`共 ${funnelData.rejected.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="danger" class="count-tag">{{ funnelData.rejected.length }}</el-tag>
+                  </el-tooltip>
                 </h4>
               </div>
               <div class="stage-candidates">
@@ -224,8 +184,10 @@
                   </div>
                   <div class="candidate-status rejected">已结束</div>
                 </div>
-                <div class="candidate-more" v-if="funnelData.rejected.length > 5">
-                  还有 {{ funnelData.rejected.length - 5 }} 人...
+                <div class="candidate-more" v-if="funnelData.rejected.length > 5" @click="viewAllCandidates('rejected')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.rejected.length - 5 }} 人，查看全部
+                  </el-button>
                 </div>
                 <el-empty v-if="funnelData.rejected.length === 0" description="暂无数据" :image-size="60" />
               </div>
@@ -278,7 +240,6 @@ const {
   sourceData, 
   trendData, 
   funnelData, 
-  newStatsData, 
   funnelMetrics,
   loadingActivities,
   loadingFunnel,
@@ -341,68 +302,164 @@ function initHeatChart() {
   }
 }
 
-// 更新热度图表 - 堆叠柱状图展示各阶段数据
+// 更新热度图表 - 柱状图或折线图展示各阶段数据
 function updateHeatChart() {
   if (!heatChart) return
-  
+
   const data = heatData.value || []
   const isCount = heatChartType.value === 'count'
-  
-  // 堆叠柱状图配置
+
+  // 阶段类型
   const stageTypes = ['简历筛选', '面试中', '谈薪中', '已成单']
   const stageColors = ['#909399', '#409EFF', '#E6A23C', '#67C23A']
-  
+
   // 提取职位名称作为x轴
   const positions = data.map(item => item.name || item.level)
-  
-  // 为每个阶段创建一个series
-  const series = stageTypes.map((stageType, index) => ({
-    name: stageType,
-    type: 'bar',
-    stack: 'total',
-    emphasis: { focus: 'series' },
-    data: data.map(item => {
-      // 从bars数组中找到对应阶段的count
-      const stage = item.bars?.find(bar => bar.type === stageType)
-      return isCount ? (stage?.count || 0) : 0
-    }),
-    itemStyle: {
-      color: stageColors[index]
-    }
-  }))
-  
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' }
-    },
-    legend: {
-      data: stageTypes,
-      bottom: 0
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '15%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      data: positions,
-      axisLabel: { 
-        interval: 0, 
-        rotate: 30,
-        fontSize: 11
+
+  if (isCount) {
+    // 人数模式：堆叠柱状图
+    const series = stageTypes.map((stageType, index) => ({
+      name: stageType,
+      type: 'bar',
+      stack: 'total',
+      emphasis: { focus: 'series' },
+      data: data.map(item => {
+        const stage = item.bars?.find(bar => bar.type === stageType)
+        return stage?.count || 0
+      }),
+      itemStyle: {
+        color: stageColors[index]
       }
-    },
-    yAxis: {
-      type: 'value',
-      name: isCount ? '数量' : '转化率(%)'
-    },
-    series: series
+    }))
+
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' }
+      },
+      legend: {
+        data: stageTypes,
+        bottom: 0
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: positions,
+        axisLabel: {
+          interval: 0,
+          rotate: 30,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '数量'
+      },
+      series: series
+    }
+
+    heatChart.setOption(option, true)
+  } else {
+    // 转化率模式：折线图（以简历筛选为基数100%）
+    const interviewData = data.map(item => {
+      const stage = item.bars?.find(bar => bar.type === '面试中')
+      return stage?.rate || 0
+    })
+
+    const closedData = data.map(item => {
+      const stage = item.bars?.find(bar => bar.type === '已成单')
+      return stage?.rate || 0
+    })
+
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        formatter: function(params) {
+          const positionName = params[0].name
+          const posData = data.find(item => item.name === positionName) || {}
+          const total = posData.totalResumes || 0
+          const interview = posData.interviewCount || 0
+          const closed = posData.closedCount || 0
+
+          let result = `<div style="font-weight:600;margin-bottom:8px">${positionName}</div>`
+          result += `<div style="margin-bottom:4px">📋 简历总数: <strong>${total}</strong> (分母)</div>`
+          result += `<div style="color:#409EFF;margin-bottom:4px">🎯 面试: ${interview}人 → ${params[0].value}%</div>`
+          result += `<div style="color:#67C23A">✅ 成单: ${closed}人 → ${params[1].value}%</div>`
+          return result
+        }
+      },
+      legend: {
+        data: ['面试转化率', '成单转化率'],
+        bottom: 0
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: positions,
+        boundaryGap: false,
+        axisLabel: {
+          interval: 0,
+          rotate: 30,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '转化率(%)',
+        max: 100
+      },
+      series: [
+        {
+          name: '面试转化率',
+          type: 'line',
+          data: interviewData,
+          smooth: true,
+          itemStyle: { color: '#409EFF' },
+          lineStyle: { width: 3 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(64, 158, 255, 0.3)' },
+                { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+              ]
+            }
+          }
+        },
+        {
+          name: '成单转化率',
+          type: 'line',
+          data: closedData,
+          smooth: true,
+          itemStyle: { color: '#67C23A' },
+          lineStyle: { width: 3 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(103, 194, 58, 0.3)' },
+                { offset: 1, color: 'rgba(103, 194, 58, 0.05)' }
+              ]
+            }
+          }
+        }
+      ]
+    }
+
+    heatChart.setOption(option, true)
   }
-  
-  heatChart.setOption(option, true)
 }
 
 // 初始化来源图表
@@ -584,7 +641,7 @@ onUnmounted(() => {
 
 .dashboard-layout {
   display: grid;
-  grid-template-columns: 2fr 3fr;
+  grid-template-columns: 1fr 4fr;
   gap: 24px;
 }
 
@@ -593,118 +650,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
-}
-
-/* 数据统计卡片网格 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
-.stat-card {
-  padding: 20px;
-  border-radius: 12px;
-  background: white;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  position: relative;
-  overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.1);
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  border-radius: 12px 12px 0 0;
-}
-
-.stat-card.blue::before {
-  background: linear-gradient(90deg, #909399, #C0C4CC);
-}
-
-.stat-card.orange::before {
-  background: linear-gradient(90deg, #409EFF, #69B1FF);
-}
-
-.stat-card.yellow::before {
-  background: linear-gradient(90deg, #E6A23C, #F7BA2A);
-}
-
-.stat-card.green::before {
-  background: linear-gradient(90deg, #67C23A, #85CE61);
-}
-
-.stat-card.red::before {
-  background: linear-gradient(90deg, #F56C6C, #F89898);
-}
-
-.stat-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-}
-
-.stat-card.blue .stat-icon {
-  background: rgba(144, 147, 153, 0.1);
-  color: #909399;
-}
-
-.stat-card.orange .stat-icon {
-  background: rgba(64, 158, 255, 0.1);
-  color: #409EFF;
-}
-
-.stat-card.yellow .stat-icon {
-  background: rgba(230, 162, 60, 0.1);
-  color: #E6A23C;
-}
-
-.stat-card.green .stat-icon {
-  background: rgba(103, 194, 58, 0.1);
-  color: #67C23A;
-}
-
-.stat-card.red .stat-icon {
-  background: rgba(245, 108, 108, 0.1);
-  color: #F56C6C;
-}
-
-.stat-content {
-  flex: 1;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.stat-sub {
-  font-size: 12px;
-  color: #C0C4CC;
 }
 
 /* 活动动态流 */
@@ -867,6 +812,27 @@ onUnmounted(() => {
 .stage-title .el-icon {
   font-size: 16px;
   color: #909399;
+}
+
+/* 数量标签样式 */
+.count-tag {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.stage-title .count-tag {
+  margin-left: auto;
+}
+
+/* 查看更多按钮样式 */
+.candidate-more {
+  text-align: center;
+  padding: 8px 0;
+  margin-top: 8px;
+  border-top: 1px dashed #e4e7ed;
+  cursor: pointer;
 }
 
 .stage-candidates {
@@ -1041,10 +1007,6 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
   
-  .stats-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  
   .funnel-stages {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1055,10 +1017,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
   .funnel-stages {
     grid-template-columns: 1fr;
   }

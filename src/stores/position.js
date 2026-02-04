@@ -243,7 +243,15 @@ return newPosition.id
 
   async function updateMatchStatus(matchId, status) {
     try {
+      console.log('\n========== [前端提交] ==========')
+      console.log('[前端] 时间:', new Date().toLocaleString('zh-CN'))
+      console.log('[前端] 匹配ID:', matchId)
+      console.log('[前端] 提交数据:', JSON.stringify(status, null, 2))
+
       await api.put(`/position-resumes/${matchId}/status`, { status })
+
+      console.log('[前端] 请求完成')
+
       if (currentPositionId.value) {
         await fetchResumes(currentPositionId.value)
       }
@@ -402,6 +410,103 @@ return newPosition.id
     }
   }
 
+  // 推荐相关状态
+  const recommendations = ref({})
+  const recommendStatus = ref({})
+
+  // 触发推荐
+  async function triggerRecommend(positionId) {
+    try {
+      const result = await api.post(`/positions/${positionId}/recommend`)
+      if (result) {
+        recommendStatus.value[positionId] = {
+          status: 'processing',
+          message: result.message || '正在计算推荐...'
+        }
+        return result
+      }
+      return null
+    } catch (error) {
+      console.error('触发推荐失败:', error)
+      throw error
+    }
+  }
+
+  // 获取推荐列表
+  async function getRecommendations(positionId, page = 1, limit = 10) {
+    try {
+      const data = await api.get(`/positions/${positionId}/recommendations?page=${page}&limit=${limit}`)
+      if (data) {
+        if (!recommendations.value[positionId]) {
+          recommendations.value[positionId] = []
+        }
+        if (page === 1) {
+          recommendations.value[positionId] = data.items || []
+        } else {
+          recommendations.value[positionId].push(...(data.items || []))
+        }
+        return {
+          items: data.items || [],
+          total: data.total || 0,
+          hasMore: data.has_more || false
+        }
+      }
+      return { items: [], total: 0, hasMore: false }
+    } catch (error) {
+      console.error('获取推荐列表失败:', error)
+      return { items: [], total: 0, hasMore: false }
+    }
+  }
+
+  // 获取推荐计算状态
+  async function getRecommendStatus(positionId) {
+    try {
+      const data = await api.get(`/positions/${positionId}/recommendations/status`)
+      if (data) {
+        recommendStatus.value[positionId] = {
+          status: data.status,
+          message: data.message || ''
+        }
+        return data
+      }
+      return null
+    } catch (error) {
+      console.error('获取推荐状态失败:', error)
+      return null
+    }
+  }
+
+  // 接受推荐（推进入职流程）
+  async function acceptRecommendation(positionId, resumeId) {
+    try {
+      const result = await api.post(`/positions/${positionId}/recommendations/${resumeId}/accept`)
+      if (result && result.success) {
+        // 从推荐列表中移除
+        const list = recommendations.value[positionId] || []
+        const index = list.findIndex(item => item.resume_id === resumeId)
+        if (index > -1) {
+          list.splice(index, 1)
+        }
+        // 刷新职位简历列表
+        await fetchResumes(positionId)
+      }
+      return result
+    } catch (error) {
+      console.error('接受推荐失败:', error)
+      throw error
+    }
+  }
+
+  // 获取当前职位的推荐列表
+  function getPositionRecommendations(positionId) {
+    return recommendations.value[positionId] || []
+  }
+
+  // 获取当前职位的推荐状态
+  function getPositionRecommendStatus(positionId) {
+    return recommendStatus.value[positionId] || { status: 'idle', message: '' }
+  }
+
   return {
     positions,
     activePositions,
@@ -436,6 +541,14 @@ return newPosition.id
     reopenCandidate,
     parsePositionJD,
     updateParsedField,
-    fetchParsedJD
+    fetchParsedJD,
+    recommendations,
+    recommendStatus,
+    triggerRecommend,
+    getRecommendations,
+    getRecommendStatus,
+    acceptRecommendation,
+    getPositionRecommendations,
+    getPositionRecommendStatus
   }
 })

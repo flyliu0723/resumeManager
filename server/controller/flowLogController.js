@@ -65,7 +65,7 @@ const flowLogController = {
         }
 
         interviewEventStmt.insert(eventType, matchId, match.position_id, {
-          eventTime: new Date().toISOString(),
+          eventTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
           stageBefore: currentStatus || null,
           stageAfter: toStatus,
           durationSeconds,
@@ -77,7 +77,6 @@ const flowLogController = {
             candidateName: match.candidate_name || '未知'
           }
         })
-        console.log('记录状态变更事件成功:', { matchId, eventType, from: currentStatus, to: toStatus })
       } catch (eventErr) {
         console.error('记录状态变更事件失败:', eventErr)
       }

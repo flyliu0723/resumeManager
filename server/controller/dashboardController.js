@@ -9,6 +9,7 @@ const {
   interviewEventStmt
 } = require('../database')
 const { success, error } = require('../utils/response')
+const { isClosed, isOnboarded, getConversionNumerator, getConversionDenominator } = require('../config/dashboard')
 
 const dashboardController = {
   
@@ -88,72 +89,120 @@ const dashboardController = {
   getFunnelData: (req, res) => {
     try {
       const { limit = 5 } = req.query
+      const { StatusUtils } = require('../constants/interviewStatus')
       
       const stages = ['resume_screening', 'interviewing', 'salary_negotiation', 'closed', 'rejected']
       const funnelData = {}
       
-      for (const stage of stages) {
-        const matches = positionResumeStmt.all(
-          `SELECT pr.*, r.candidate_name, p.name as position_name, 
-                  r.initials, r.avatar_color
-           FROM position_resumes pr
-           JOIN resumes r ON pr.resume_id = r.id
-           JOIN positions p ON pr.position_id = p.id
-           WHERE pr.main_status = ?
-           ORDER BY pr.update_time DESC
-           LIMIT ?`,
-          [stage, Number(limit)]
-        )
-        
-        funnelData[stage] = matches.map(m => ({
-          id: m.id,
-          candidateName: m.candidate_name,
-          positionTitle: m.position_name,
-          mainStatus: m.main_status,
-          subStatus: m.sub_status,
-          interviewRound: m.interview_round,
-          initials: m.initials || m.candidate_name?.charAt(0) || '?',
-          avatarColor: m.avatar_color || '#409EFF',
-          daysInStage: m.flow_start_at 
-            ? Math.floor((Date.now() - new Date(m.flow_start_at).getTime()) / (1000 * 60 * 60 * 24))
-            : 0
-        }))
-      }
-      
-      success(res, funnelData)
-    } catch (err) {
-      error(res, err.message)
-    }
-  },
-  
-  // 获取漏斗指标
+       // 先获取所有候选人数据
+        const allMatches = positionResumeStmt.all(
+           `SELECT 
+             pr.id, pr.resume_id, pr.position_id, pr.evaluation, pr.match_score, 
+             pr.questions, pr.status, pr.matched_at, pr.current_status, pr.jd_supplement,
+             pr.flow_start_at, pr.update_time, pr.next_interview_at, pr.main_status, 
+             pr.sub_status, pr.interview_round, pr.current_round_id,
+             r.candidate_name, r.name as resume_name, p.name as position_name,
+             substr(r.candidate_name, 1, 1) as initials
+             FROM position_resumes pr
+             JOIN resumes r ON pr.resume_id = r.id
+             JOIN positions p ON pr.position_id = p.id
+             ORDER BY pr.update_time DESC`
+         )
+
+        for (const stage of stages) {
+          // 根据主状态和子状态正确分类
+          let filteredMatches = allMatches.filter(m => {
+            const isTerminal = StatusUtils.isTerminalStatus(m.main_status, m.sub_status)
+
+             if (stage === 'rejected') {
+               // 已结束阶段：包含所有子状态为终态的记录（无论主状态）
+               // 排除已成功入职的（closed/onboarded）和待入职的（pending_onboard是进行中）
+               return isTerminal && !isClosed(m)
+             } else if (stage === 'closed') {
+               // 已成单阶段：包含待入职和已入职（根据配置）
+               return isClosed(m)
+             } else {
+              // 进行中阶段：主状态匹配且子状态不是终态
+              return m.main_status === stage && !isTerminal
+            }
+          }).slice(0, Number(limit))
+
+          funnelData[stage] = filteredMatches.map(m => ({
+            id: m.id,
+            candidateName: m.candidate_name,
+            positionTitle: m.position_name,
+            mainStatus: m.main_status,
+            subStatus: m.sub_status,
+            interviewRound: m.interview_round,
+            initials: m.candidate_name?.charAt(0) || '?',
+            avatarColor: '#409EFF',
+           daysInStage: m.flow_start_at
+             ? Math.floor((Date.now() - new Date(m.flow_start_at).getTime()) / (1000 * 60 * 60 * 24))
+             : 0
+         }))
+       }
+
+        success(res, funnelData)
+     } catch (err) {
+       console.error('【看板漏斗】错误:', err)
+       error(res, err.message)
+     }
+   },
+   
+   // 获取漏斗指标
   getFunnelMetrics: (req, res) => {
     try {
       const allMatches = positionResumeStmt.getAll()
+      const { StatusUtils } = require('../constants/interviewStatus')
       
-      const total = allMatches.length
-      const closed = allMatches.filter(m => m.main_status === 'closed').length
-      const rejected = allMatches.filter(m => m.main_status === 'rejected').length
+      // 使用统一的转化率计算（根据配置）
+      const denominator = getConversionDenominator(allMatches)
+      const numerator = getConversionNumerator(allMatches)
+      
+      // 流失率：所有终态但非成功的候选人
+      const rejected = allMatches.filter(m => {
+        const isTerminal = StatusUtils.isTerminalStatus(m.main_status, m.sub_status)
+        return isTerminal && !isClosed(m)
+      }).length
       
       // 计算平均周期（从简历投递到当前状态的天数）
       let totalDays = 0
       let countWithDays = 0
       
       for (const match of allMatches) {
-        if (match.flow_start_at) {
+        if (match.matched_at) {
           const days = Math.floor((Date.now() - new Date(match.matched_at).getTime()) / (1000 * 60 * 60 * 24))
           totalDays += days
           countWithDays++
         }
       }
       
-      const metrics = {
-        conversionRate: total > 0 ? Math.round((closed / total) * 100) : 0,
-        avgDays: countWithDays > 0 ? Math.round(totalDays / countWithDays) : 0,
-        dropOffRate: total > 0 ? Math.round((rejected / total) * 100) : 0
-      }
-      
-      success(res, metrics)
+       const metrics = {
+         conversionRate: denominator > 0 ? Math.round((numerator / denominator) * 100) : 0,
+         avgDays: countWithDays > 0 ? Math.round(totalDays / countWithDays) : 0,
+         dropOffRate: denominator > 0 ? Math.round((rejected / denominator) * 100) : 0,
+         // 新增明细数据
+         details: {
+           totalCandidates: allMatches.length,
+           denominatorCount: denominator,
+           numeratorCount: numerator,
+           onboardedCount: allMatches.filter(m => isOnboarded(m)).length,
+           pendingOnboardCount: allMatches.filter(m => m.main_status === 'closed' && m.sub_status === 'pending_onboard').length,
+           rejectedCount: rejected
+         }
+       }
+       
+       console.log('\n【漏斗指标】=== 转化率计算详情 ===')
+       console.log(`  总候选人: ${metrics.details.totalCandidates}`)
+       console.log(`  分母(${DASHBOARD_CONFIG.conversionRate.denominator}): ${metrics.details.denominatorCount}`)
+       console.log(`  分子(${DASHBOARD_CONFIG.conversionRate.numerator}): ${metrics.details.numeratorCount}`)
+       console.log(`    - 已入职: ${metrics.details.onboardedCount}`)
+       console.log(`    - 待入职: ${metrics.details.pendingOnboardCount}`)
+       console.log(`  转化率: ${metrics.conversionRate}%`)
+       console.log(`  流失率: ${metrics.dropOffRate}%`)
+       console.log('【漏斗指标】返回数据:', JSON.stringify(metrics, null, 2))
+       
+       success(res, metrics)
     } catch (err) {
       error(res, err.message)
     }
@@ -162,42 +211,58 @@ const dashboardController = {
   // 获取岗位热度数据
   getHeatData: (req, res) => {
     try {
-      console.log('【岗位热度后端】开始查询数据...')
+      const { StatusUtils } = require('../constants/interviewStatus')
       
-      // 按职位统计各阶段人数
-      const data = positionResumeStmt.all(`
+      const allMatches = positionResumeStmt.all(`
         SELECT 
           p.name as position_name,
           pr.main_status,
-          COUNT(*) as count
+          pr.sub_status
         FROM position_resumes pr
         JOIN positions p ON pr.position_id = p.id
-        GROUP BY p.id, pr.main_status
         ORDER BY p.name
       `)
       
-      console.log('【岗位热度后端】原始SQL查询结果条数:', data.length)
-      console.log('【岗位热度后端】原始数据样例:', data.slice(0, 5))
-      
-      // 组织成堆叠柱状图数据
-      const positions = [...new Set(data.map(d => d.position_name))]
-      console.log('【岗位热度后端】职位列表:', positions)
+      const positions = [...new Set(allMatches.map(m => m.position_name))]
       
       const result = positions.map(pos => {
-        const posData = data.filter(d => d.position_name === pos)
+        const posMatches = allMatches.filter(m => m.position_name === pos)
+        
+        const screeningMatches = posMatches.filter(m => {
+          const isTerminal = StatusUtils.isTerminalStatus(m.main_status, m.sub_status)
+          return m.main_status === 'resume_screening' && !isTerminal
+        })
+        
+        const interviewingMatches = posMatches.filter(m => {
+          const isTerminal = StatusUtils.isTerminalStatus(m.main_status, m.sub_status)
+          return m.main_status === 'interviewing' && !isTerminal
+        })
+        
+        const closedMatches = posMatches.filter(m => isClosed(m))
+          
+        const pendingOnboardCount = closedMatches.filter(m => m.sub_status === 'pending_onboard').length
+        const onboardedCount = closedMatches.filter(m => m.sub_status === 'onboarded').length
+         
+        const totalResumes = posMatches.length
+        const calculateRate = (current, base) => base > 0 ? Math.round((current / base) * 100) : 0
+
+        const interviewRate = calculateRate(interviewingMatches.length, totalResumes)
+        const closedRate = calculateRate(closedMatches.length, totalResumes)
+
         return {
           name: pos,
+          totalResumes,
+          interviewCount: interviewingMatches.length,
+          closedCount: closedMatches.length,
           bars: [
-            { type: '简历筛选', count: posData.find(d => d.main_status === 'resume_screening')?.count || 0 },
-            { type: '面试中', count: posData.find(d => d.main_status === 'interviewing')?.count || 0 },
-            { type: '谈薪中', count: posData.find(d => d.main_status === 'salary_negotiation')?.count || 0 },
-            { type: '已成单', count: posData.find(d => d.main_status === 'closed')?.count || 0 }
+            { type: '简历筛选', count: screeningMatches.length },
+            { type: '面试中', count: interviewingMatches.length, rate: interviewRate },
+            { type: '已成单', count: closedMatches.length, rate: closedRate, subCount: { pending: pendingOnboardCount, onboarded: onboardedCount } }
           ]
         }
-      })
-      
-      console.log('【岗位热度后端】返回结果:', result)
-      success(res, result)
+       })
+       
+       success(res, result)
     } catch (err) {
       console.error('【岗位热度后端】错误:', err)
       error(res, err.message)
@@ -235,7 +300,6 @@ const dashboardController = {
       const days = 30
       const result = []
       
-      console.log('【趋势数据后端】开始查询近30天数据...')
       
       // 诊断查询：检查resumes表的数据情况
       const stats = positionResumeStmt.get(`
@@ -245,7 +309,6 @@ const dashboardController = {
           COUNT(*) as total_count
         FROM resumes
       `)
-      console.log('【趋势数据后端】诊断：resumes表统计', stats)
       
       // 计算查询的日期范围
       const startDate = new Date()
@@ -254,7 +317,6 @@ const dashboardController = {
         start: startDate.toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
       }
-      console.log('【趋势数据后端】诊断：查询日期范围', dateRange)
       
       for (let i = days - 1; i >= 0; i--) {
         const date = new Date()
@@ -277,75 +339,78 @@ const dashboardController = {
           WHERE strftime('%Y-%m-%d', created_at) = ?
           AND (main_status_to = 'interviewing' OR to_status LIKE '%面试%')
         `, [dateStr])
-        
-        // 调试：打印前几天的查询结果
-        if (i >= days - 3) {
-          console.log(`【趋势数据后端】${dateStr}: 简历${newResumes[0]?.count || 0}, 面试${newInterviews[0]?.count || 0}`)
-        }
-        
+
         result.push({
           date: dateStr,
           newResumes: newResumes[0]?.count || 0,
           newInterviews: newInterviews[0]?.count || 0
         })
       }
-      
-      // 计算总和用于调试
-      const totalResumes = result.reduce((sum, item) => sum + item.newResumes, 0)
-      const totalInterviews = result.reduce((sum, item) => sum + item.newInterviews, 0)
-      console.log(`【趋势数据后端】查询完成，30天共新增简历${totalResumes}份，面试${totalInterviews}场`)
-      console.log('【趋势数据后端】返回数据样例:', result.slice(0, 3))
-      
+
       success(res, result)
-    } catch (err) {
-      console.error('【趋势数据后端】错误:', err)
-      error(res, err.message)
-    }
-  },
-  
-  // 获取操作动态
-  getActivities: (req, res) => {
-    try {
-      const { limit = 10 } = req.query
-      
-      // 获取最近的流程日志
-      const logs = positionResumeStmt.all(`
-        SELECT 
-          fl.*,
-          r.candidate_name,
-          '系统' as operator_name,
-          '#409EFF' as operator_color
-        FROM position_resume_flow_logs fl
-        JOIN position_resumes pr ON fl.match_id = pr.id
-        JOIN resumes r ON pr.resume_id = r.id
-        ORDER BY fl.created_at DESC
-        LIMIT ?
-      `, [Number(limit)])
-      
-      const activities = logs.map(log => {
-        return {
-          id: log.id,
-          created_at: log.created_at,
-          operator_name: log.operator_name,
-          operator_color: log.operator_color,
-          action_type: log.action_type || 'status_change',
-          action_description: `${log.candidate_name} - ${getStatusChangeDescription(log)}`,
-          from_status: log.from_status,
-          to_status: log.to_status,
-          main_status_from: log.main_status_from,
-          main_status_to: log.main_status_to,
-          sub_status_from: log.sub_status_from,
-          sub_status_to: log.sub_status_to
-        }
-      })
-      
-      success(res, activities)
     } catch (err) {
       error(res, err.message)
     }
   },
 
+  // 获取操作动态
+   getActivities: (req, res) => {
+     try {
+       const { limit = 10 } = req.query
+
+       console.log('\n========== [后端 getActivities] ==========')
+       console.log('[getActivities] 请求时间:', new Date().toLocaleString('zh-CN'))
+       console.log('[getActivities] limit:', limit)
+
+       // 获取最近的流程日志
+       const logs = positionResumeStmt.all(`
+         SELECT
+           fl.*,
+           r.candidate_name,
+           '系统' as operator_name,
+           '#409EFF' as operator_color
+         FROM position_resume_flow_logs fl
+         JOIN position_resumes pr ON fl.match_id = pr.id
+         JOIN resumes r ON pr.resume_id = r.id
+         ORDER BY fl.created_at DESC
+         LIMIT ?
+       `, [Number(limit)])
+
+       console.log('[getActivities] 查询到日志条数:', logs.length)
+       if (logs.length > 0) {
+         console.log('[getActivities] 最新日志:', JSON.stringify(logs[0], null, 2))
+       }
+
+       const activities = logs.map(log => {
+         return {
+           id: log.id,
+           created_at: log.created_at,
+           operator_name: log.operator_name,
+           operator_color: log.operator_color,
+           action_type: log.action_type || 'status_change',
+           action_description: `${log.candidate_name} - ${getStatusChangeDescription(log)}`,
+           from_status: log.from_status,
+           to_status: log.to_status,
+           main_status_from: log.main_status_from,
+           main_status_to: log.main_status_to,
+           sub_status_from: log.sub_status_from,
+           sub_status_to: log.sub_status_to
+         }
+       })
+
+       console.log('[getActivities] 返回数据条数:', activities.length)
+       if (activities.length > 0) {
+         console.log('[getActivities] 返回最新一条:', JSON.stringify(activities[0], null, 2))
+       }
+
+       success(res, activities)
+     } catch (err) {
+       error(res, err.message)
+     }
+   },
+
   // 根据主状态获取候选人列表（用于流程看板）
+  // 重要：需要结合主状态和子状态(isTerminal)来正确分类
   getCandidatesByMainStatus: (req, res) => {
     try {
       const { mainStatus, excludeTerminal = 'false' } = req.query
@@ -354,6 +419,9 @@ const dashboardController = {
         return error(res, '请提供主状态参数 mainStatus', 400)
       }
       
+      const { StatusUtils } = require('../constants/interviewStatus')
+      
+      // 获取所有数据，然后在前端过滤（因为需要判断子状态是否为终态）
       let sql = `
         SELECT 
           pr.*,
@@ -366,16 +434,30 @@ const dashboardController = {
         FROM position_resumes pr
         JOIN resumes r ON pr.resume_id = r.id
         JOIN positions p ON pr.position_id = p.id
-        WHERE pr.main_status = ?
       `
-      
-      const params = [mainStatus]
-      
-      sql += ` ORDER BY pr.update_time DESC`
-      
-      const matches = positionResumeStmt.all(sql, params)
-      
-      success(res, matches)
+
+      // 对于进行中阶段，需要排除子状态为终态的记录
+      // 对于已结束阶段，需要包含所有子状态为终态的记录
+      const matches = positionResumeStmt.all(sql)
+
+      // 根据主状态和子状态进行正确分类
+      let filteredMatches = matches.filter(m => {
+        const isTerminal = StatusUtils.isTerminalStatus(m.main_status, m.sub_status)
+
+        if (mainStatus === 'closed') {
+          // 已成单阶段：使用isClosed函数（包含pending_onboard和onboarded）
+          const result = isClosed(m)
+          return result
+        } else if (mainStatus === 'rejected') {
+          // 已结束阶段：包含所有子状态为终态的记录（无论主状态）
+          return isTerminal
+        } else {
+          // 进行中阶段：主状态匹配且子状态不是终态
+          return m.main_status === mainStatus && !isTerminal
+        }
+      })
+
+      success(res, filteredMatches)
     } catch (err) {
       error(res, err.message)
     }
@@ -467,7 +549,6 @@ function getStatusChangeDescription(log) {
       case 'salary_negotiation':
         if (subTo === 'approval_pending') return '提交薪资审批'
         if (subTo === 'offer_sent') return '发送Offer'
-        if (subTo === 'offer_accepted') return '候选人接受Offer'
         if (subTo === 'salary_rejected') return '谈薪失败'
         if (subTo === 'offer_rejected') return '候选人拒绝Offer'
         return `谈薪状态：${fromSub}→${toSub}`

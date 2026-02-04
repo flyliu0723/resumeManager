@@ -24,29 +24,48 @@
         v-for="(log, index) in logs"
         :key="log.id || index"
         :timestamp="formatTime(log.created_at)"
-        :type="getTimelineType(log.to_main_status, log.to_sub_status)"
+        :type="getTimelineType(log.main_status_to, log.sub_status_to)"
         placement="top"
       >
         <div class="timeline-content">
+          <!-- 状态变更信息 -->
           <div class="timeline-header">
-            <span class="status-tag" :class="getStatusClass(log.to_main_status, log.to_sub_status)">
-              {{ getStatusDisplayText(log.to_main_status, log.to_sub_status) }}
+            <span class="status-tag" :class="getStatusClass(log.main_status_to, log.sub_status_to)">
+              {{ getStatusDisplayText(log.main_status_to, log.sub_status_to) }}
             </span>
-            <span v-if="log.from_main_status || log.from_sub_status" class="arrow">←</span>
-            <span v-if="log.from_main_status || log.from_sub_status" class="from-status">
-              {{ getStatusDisplayText(log.from_main_status, log.from_sub_status) }}
+            <span v-if="log.main_status_from || log.sub_status_from" class="arrow">←</span>
+            <span v-if="log.main_status_from || log.sub_status_from" class="from-status">
+              {{ getStatusDisplayText(log.main_status_from, log.sub_status_from) }}
             </span>
           </div>
-          <div v-if="log.action_type === 'reject'" class="timeline-rejection">
+          
+          <!-- 操作类型标识 -->
+          <div v-if="log.action_type" class="timeline-action">
+            <el-tag 
+              :type="log.action_type === 'reject' ? 'danger' : log.action_type === 'interview' ? 'warning' : 'info'" 
+              size="small"
+            >
+              {{ getActionTypeLabel(log.action_type) }}
+            </el-tag>
+          </div>
+          
+          <!-- 拒绝原因 -->
+          <div v-if="log.action_type === 'reject' || log.rejection_reason" class="timeline-rejection">
             <el-tag type="danger" size="small">流程终止</el-tag>
             <span v-if="log.rejection_reason" class="rejection-reason">
               原因：{{ getRejectionReasonLabel(log.rejection_reason) }}
             </span>
           </div>
+          
+          <!-- 备注信息 -->
           <div v-if="log.note" class="timeline-note">
-            {{ log.note }}
+            <div class="note-label">备注：</div>
+            <div class="note-content">{{ log.note }}</div>
           </div>
-          <div v-if="log.interview_type || log.interview_time" class="timeline-interview">
+          
+          <!-- 面试信息 -->
+          <div v-if="log.interview_type || log.interview_time || log.interviewer" class="timeline-interview">
+            <div class="section-label">面试安排</div>
             <div v-if="log.interview_type" class="interview-item">
               <span class="interview-label">面试类型：</span>
               <span class="interview-value">{{ log.interview_type }}</span>
@@ -60,27 +79,41 @@
               <span class="interview-value">{{ log.interviewer }}</span>
             </div>
           </div>
+          
+          <!-- JD补充信息 -->
           <div v-if="log.jd_supplement" class="timeline-jd">
-            <div class="jd-label">JD补充：</div>
+            <div class="section-label">JD补充信息</div>
             <div class="jd-content">{{ log.jd_supplement }}</div>
+          </div>
+          
+          <!-- 其他变更内容（如果有metadata） -->
+          <div v-if="log.metadata_json" class="timeline-metadata">
+            <div class="section-label">详细变更</div>
+            <div class="metadata-content">{{ formatMetadata(log.metadata_json) }}</div>
           </div>
         </div>
       </el-timeline-item>
 
+      <!-- 初始状态展示（当没有任何流转记录时） -->
       <el-timeline-item
         v-if="logs.length === 0"
-        timestamp="初始"
+        :timestamp="formatTime(candidate?.matched_at) || '初始'"
         type="primary"
         placement="top"
       >
         <div class="timeline-content">
           <div class="timeline-header">
             <span class="status-tag" :class="getStatusClass(candidate?.main_status, candidate?.sub_status)">
-              {{ getStatusDisplayText(candidate?.main_status, candidate?.sub_status) || '简历筛选/待筛选' }}
+              {{ getStatusDisplayText(candidate?.main_status, candidate?.sub_status) }}
             </span>
+            <span class="init-label">当前状态</span>
           </div>
           <div class="timeline-note">
-            简历导入，初始状态
+            简历导入系统，初始状态为"{{ getStatusDisplayText(candidate?.main_status, candidate?.sub_status) }}"
+          </div>
+          <div v-if="candidate?.evaluation" class="timeline-evaluation">
+            <div class="eval-label">AI评估：</div>
+            <div class="eval-score">匹配度 {{ candidate.match_score }}%</div>
           </div>
         </div>
       </el-timeline-item>
@@ -230,6 +263,72 @@ const getRejectionReasonLabel = (reasonCode) => {
   return reason?.label || reasonCode
 }
 
+const getActionTypeLabel = (actionType) => {
+  const labels = {
+    'status_change': '状态变更',
+    'reject': '流程终止',
+    'interview': '面试安排',
+    'reopen': '重新打开',
+    'note_added': '添加备注',
+    'jd_updated': 'JD更新'
+  }
+  return labels[actionType] || actionType
+}
+
+const formatMetadata = (metadataJson) => {
+  try {
+    const metadata = JSON.parse(metadataJson)
+    const parts = []
+    
+    // 处理状态变更信息
+    if (metadata.old_main_status || metadata.new_main_status) {
+      const oldMain = metadata.old_main_status 
+        ? StatusUtils.getMainStatus(metadata.old_main_status)?.label || metadata.old_main_status
+        : ''
+      const newMain = metadata.new_main_status
+        ? StatusUtils.getMainStatus(metadata.new_main_status)?.label || metadata.new_main_status
+        : ''
+      const oldSub = metadata.old_sub_status
+        ? StatusUtils.getSubStatus(metadata.old_main_status, metadata.old_sub_status)?.label || metadata.old_sub_status
+        : ''
+      const newSub = metadata.new_sub_status
+        ? StatusUtils.getSubStatus(metadata.new_main_status, metadata.new_sub_status)?.label || metadata.new_sub_status
+        : ''
+      
+      const fromStatus = oldMain && oldSub ? `${oldMain}/${oldSub}` : oldMain || '初始'
+      const toStatus = newMain && newSub ? `${newMain}/${newSub}` : newMain
+      
+      parts.push(`状态变更: ${fromStatus} → ${toStatus}`)
+    }
+    
+    // 处理其他字段
+    const ignoreFields = ['old_main_status', 'old_sub_status', 'new_main_status', 'new_sub_status']
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (!ignoreFields.includes(key) && value) {
+        const label = getFieldLabel(key)
+        parts.push(`${label}: ${value}`)
+      }
+    })
+    
+    return parts.join(' | ')
+  } catch {
+    return metadataJson
+  }
+}
+
+const getFieldLabel = (key) => {
+  const labels = {
+    'interview_round': '面试轮次',
+    'rejection_reason': '拒绝原因',
+    'operator': '操作人',
+    'operation_time': '操作时间',
+    'note': '备注',
+    'reason': '原因',
+    'candidate_feedback': '候选人反馈'
+  }
+  return labels[key] || key
+}
+
 const getMatchLevelClass = (score) => {
   if (score === null || score === undefined) return 'none'
   if (score >= 80) return 'high'
@@ -307,6 +406,67 @@ const getMatchLevelClass = (score) => {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.init-label {
+  font-size: 12px;
+  color: #909399;
+  margin-left: auto;
+}
+
+.timeline-action {
+  margin-bottom: 8px;
+}
+
+.timeline-evaluation {
+  background: #f0f9ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #409eff;
+  margin-top: 8px;
+}
+
+.eval-label {
+  font-size: 12px;
+  color: #409eff;
+  margin-bottom: 4px;
+}
+
+.eval-score {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.section-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.note-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.note-content {
+  color: #303133;
+  line-height: 1.6;
+}
+
+.timeline-metadata {
+  background: #f4f4f5;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.metadata-content {
+  font-size: 12px;
+  color: #606266;
+  font-family: monospace;
 }
 
 .status-tag {

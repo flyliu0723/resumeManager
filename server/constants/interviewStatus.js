@@ -137,14 +137,7 @@ const SUB_STATUS = {
       label: '已发Offer',
       color: '#409EFF',
       action: '已发送Offer，等待候选人确认',
-      nextOptions: ['offer_accepted', 'offer_rejected']
-    },
-    OFFER_ACCEPTED: {
-      code: 'offer_accepted',
-      label: '已接受',
-      color: '#67C23A',
-      action: '候选人接受Offer，准备入职',
-      nextOptions: ['pending_onboard'] // 流向已成单
+      nextOptions: ['offer_rejected', 'pending_onboard'] // 接受offer直接进入待入职
     },
     OFFER_REJECTED: {
       code: 'offer_rejected',
@@ -414,6 +407,36 @@ const StatusUtils = {
     const current = this.getSubStatus(mainStatus, subStatus)
     if (!current) return []
     return current.nextOptions || []
+  },
+  
+  // 获取跨主状态的流转选项（用于处理如谈薪中->已成单的情况）
+  getCrossMainStatusFlow(mainStatus, subStatus) {
+    const nextOptions = this.getStatusFlow(mainStatus, subStatus)
+    return nextOptions.map(code => {
+      // 首先在当前主状态下查找
+      let subStatusInfo = this.getSubStatus(mainStatus, code)
+      let targetMainStatus = mainStatus
+      
+      // 如果当前主状态下找不到，则在所有主状态中查找
+      if (!subStatusInfo) {
+        for (const [mCode, subStatuses] of Object.entries(SUB_STATUS)) {
+          const found = Object.values(subStatuses).find(s => s.code === code)
+          if (found) {
+            subStatusInfo = found
+            targetMainStatus = mCode
+            break
+          }
+        }
+      }
+      
+      return {
+        code,
+        targetMainStatus,
+        label: subStatusInfo?.label || code,
+        action: subStatusInfo?.action || '',
+        isTerminal: subStatusInfo?.isTerminal || false
+      }
+    })
   },
   
   // 获取所有终态列表（用于统计流失率）

@@ -18,6 +18,51 @@ const busboy = require('busboy')
 const { success, error } = require('../utils/response')
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'files')
+const DB_PATH_PREFIX = 'uploads/files/'
+
+async function runEvaluation(matchId, resumeId, positionId, resumeContent, parsedDataStr) {
+  try {
+    const position = positionStmt.getById(positionId)
+    if (!position) return
+
+    const activeConfig = aiConfigStmt.getActive()
+    if (!activeConfig || !activeConfig.api_key) return
+
+    const aiService = new AIService(activeConfig)
+    aiService.setActiveConfig(activeConfig)
+
+    let combinedResult = {}
+    try {
+      const parsedData = JSON.parse(parsedDataStr)
+      const positionNotes = positionNoteStmt.getByPosition(positionId)
+      const notesText = positionNotes.length > 0
+        ? '\n\n职位补充要求：\n' + positionNotes.map(n => `• ${n.content}`).join('\n')
+        : ''
+      const jdText = (position.description || '') + notesText
+      const result = await aiService.evaluateAndGenerateQuestions(parsedData, jdText)
+      if (result && typeof result === 'object') {
+        combinedResult = result
+      }
+    } catch (e) {
+      console.error('合并评估失败:', e.message)
+    }
+
+    const matchScore = combinedResult.match_score || 0
+    const questionsJson = JSON.stringify(combinedResult.questions || [])
+    const evaluationJson = JSON.stringify({
+      ai_summary: combinedResult.ai_summary || '',
+      match_reasons: combinedResult.match_reasons || [],
+      gap_analysis: combinedResult.gap_analysis || [],
+      suggestions: combinedResult.suggestions || [],
+      match_score: matchScore,
+      match_level: combinedResult.match_level || '低'
+    })
+
+    positionResumeStmt.updateEvaluation(matchId, evaluationJson, matchScore, questionsJson)
+  } catch (e) {
+    console.error('评估过程出错:', e)
+  }
+}
 
 /**
  * 状态流转控制器 - 新状态系统
@@ -178,32 +223,37 @@ const positionResumeController = {
     }
   },
 
-  /**
-   * 状态流转 - 通用状态变更接口（新状态系统）
-   * 支持：正常流转、拒绝、重新打开
-   */
-  updateStatus: (req, res) => {
-    try {
-      const { id } = req.params
-      const { 
-        mainStatus,      // 新主状态
-        subStatus,       // 新子状态
-        actionType,      // 操作类型：progress（正常推进）/ reject（拒绝）/ reopen（重新打开）
-        // 拒绝相关字段
-        rejectionReasonCode,
-        rejectionReasonDetail,
-        rejectedBy,
-        rejectedByName,
-        rejectedByRole,
-        internalNotes,
-        candidateFeedback,
-        isReopenable,
-        reopenConditions,
-        // 面试相关
-        roundId,
-        // 通用备注
-        note 
-      } = req.body
+   /**
+    * 状态流转 - 通用状态变更接口（新状态系统）
+    * 支持：正常流转、拒绝、重新打开
+    */
+   updateStatus: (req, res) => {
+     try {
+       const { id } = req.params
+       console.log('\n========== [后端接收] ==========')
+       console.log('[后端] URL参数ID:', id)
+       console.log('[后端] 接收时间:', new Date().toLocaleString('zh-CN'))
+       console.log('[后端] 接收数据:', JSON.stringify(req.body, null, 2))
+
+       const {
+         mainStatus,      // 新主状态
+         subStatus,       // 新子状态
+         actionType,      // 操作类型：progress（正常推进）/ reject（拒绝）/ reopen（重新打开）
+         // 拒绝相关字段
+         rejectionReasonCode,
+         rejectionReasonDetail,
+         rejectedBy,
+         rejectedByName,
+         rejectedByRole,
+         internalNotes,
+         candidateFeedback,
+         isReopenable,
+         reopenConditions,
+         // 面试相关
+         roundId,
+         // 通用备注
+         note
+       } = req.body
 
       const match = positionResumeStmt.getById(id)
       if (!match) {
@@ -292,6 +342,7 @@ const positionResumeController = {
 
       // 记录事件（用于数据分析）
       interviewEventStmt.insert(match.resume_id, match.position_id, actionType === 'reject' ? 'candidate_rejected' : 'status_changed', {
+        eventTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
         stageBefore: oldMainStatus,
         stageAfter: mainStatus,
         details: {
@@ -388,17 +439,17 @@ const positionResumeController = {
 
       const { main_status, sub_status } = match
       
-      // 获取正常流转选项
-      const nextOptions = StatusUtils.getStatusFlow(main_status, sub_status)
+      // 获取跨主状态的正常流转选项
+      const nextOptions = StatusUtils.getCrossMainStatusFlow(main_status, sub_status)
       
       // 构建选项详情
-      const options = nextOptions.map(code => {
-        const subStatusInfo = StatusUtils.getSubStatus(main_status, code)
+      const options = nextOptions.map(opt => {
         return {
-          code,
-          label: subStatusInfo?.label || code,
-          action: subStatusInfo?.action || '',
-          is_terminal: subStatusInfo?.isTerminal || false
+          code: opt.code,
+          target_main_status: opt.targetMainStatus,
+          label: opt.label,
+          action: opt.action,
+          is_terminal: opt.isTerminal
         }
       })
 
@@ -453,11 +504,185 @@ const positionResumeController = {
     }
   },
 
-  // 原有的文件上传方法保持不变...
+  // 文件上传
   create: (req, res) => {
-    // 保留原有的文件上传逻辑
-    // 但默认状态使用新系统
-    // ... (原有代码)
+    const positionId = req.params.positionId
+    let recordFileName = ''
+    let size = 0
+    let type = ''
+    let filePath = ''
+    let tempFilePath = ''
+    let source = 'other'
+    let note = ''
+    let hasError = false
+
+    const bb = busboy({
+      headers: req.headers,
+      defParamCharset: 'utf8',
+      limits: {
+        fileSize: 50 * 1024 * 1024
+      }
+    })
+
+    bb.on('file', (name, file, info) => {
+      type = info.mimeType
+      recordFileName = info.filename || 'unknown'
+
+      const timestamp = Date.now()
+      const originalName = info.filename || 'file'
+      const ext = path.extname(originalName)
+      const baseName = path.basename(originalName, ext)
+
+      const fileName = `${timestamp}_${baseName}${ext}`
+      filePath = path.join(UPLOAD_DIR, fileName)
+      tempFilePath = filePath + '.tmp'
+      const writeStream = fs.createWriteStream(tempFilePath)
+
+      file.on('data', (data) => {
+        writeStream.write(data)
+        size += data.length
+      })
+
+      file.on('end', () => writeStream.end())
+
+      file.on('error', (err) => {
+        hasError = true
+      })
+    })
+
+    bb.on('field', (name, val) => {
+      if (name === 'source') {
+        source = val
+      } else if (name === 'note') {
+        note = val
+      }
+    })
+
+    bb.on('close', async () => {
+      try {
+        if (hasError) {
+          return error(res, '文件上传失败', 500)
+        }
+
+        if (!recordFileName) {
+          return error(res, '没有上传文件', 400)
+        }
+
+        if (!tempFilePath || !fs.existsSync(tempFilePath)) {
+          throw new Error('文件未正确接收')
+        }
+
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(tempFilePath).pipe(fs.createWriteStream(filePath))
+            .on('finish', resolve).on('error', reject)
+        })
+
+        fs.unlinkSync(tempFilePath)
+
+        const unsupportedExts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.heic', '.tif', '.tiff']
+        if (unsupportedExts.includes(path.extname(recordFileName).toLowerCase())) {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+          return error(res, `不支持的图片格式，请上传 PDF 或 Word 格式`, 400)
+        }
+
+        const result = await parserFactory.parse(filePath, recordFileName, positionId)
+
+        const ext = path.extname(recordFileName).toLowerCase()
+        const fileFormat = ext === '.pdf' ? 'PDF' : ext === '.docx' ? 'DOCX' : ext === '.doc' ? 'DOC' : 'OTHER'
+
+        const timestamp = Date.now()
+        const originalName = recordFileName || 'file'
+        const fileExt = path.extname(originalName)
+        const baseName = path.basename(originalName, fileExt)
+        const storedFileName = `${timestamp}_${baseName}${fileExt}`
+        const relativeFilePath = DB_PATH_PREFIX + storedFileName
+
+        const finalFilePath = path.join(UPLOAD_DIR, storedFileName)
+        fs.renameSync(filePath, finalFilePath)
+
+        const parsedData = JSON.stringify({
+          name: result.candidateName,
+          email: result.structuredData?.email,
+          mobile: result.structuredData?.mobile,
+          skills: result.structuredData?.skills || [],
+          education: result.structuredData?.education,
+          experience: result.structuredData?.experience,
+          companies: result.structuredData?.companies || [],
+          work_experience: result.structuredData?.work_experience,
+          project_experience: result.structuredData?.project_experience,
+          summary: result.structuredData?.ai_summary
+        })
+
+        const insertResult = resumeStmt.insert(
+          String(recordFileName),
+          String(size),
+          String(type || ''),
+          String(relativeFilePath),
+          String(fileFormat),
+          String(result.candidateName || '未知'),
+          String(result.content || ''),
+          String(source || 'other'),
+          String(note || '')
+        )
+
+        resumeStmt.updateParsedData(
+          insertResult.lastInsertRowid,
+          parsedData,
+          result.candidateName || '未知',
+          result.content || '',
+          result.parser,
+          result.structuredData?.model || ''
+        )
+
+        const matchResult = positionResumeStmt.insert(insertResult.lastInsertRowid, positionId)
+
+        try {
+          interviewEventStmt.insert('resume_upload', matchResult.lastInsertRowid, Number(positionId), {
+            eventTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+            stageAfter: '新候选人',
+            details: {
+              resumeId: insertResult.lastInsertRowid,
+              candidateName: result.candidateName || '未知',
+              fileName: recordFileName,
+              fileSize: size,
+              fileFormat: fileFormat
+            }
+          })
+        } catch (eventErr) {
+          console.error('记录简历上传事件失败:', eventErr)
+        }
+
+        setTimeout(() => {
+          runEvaluation(matchResult.lastInsertRowid, insertResult.lastInsertRowid, positionId, result.content, parsedData)
+        }, 100)
+
+        const newMatch = positionResumeStmt.getById(matchResult.lastInsertRowid)
+
+        let parsedDataObj = null
+        if (newMatch.parsed_data) {
+          try {
+            parsedDataObj = JSON.parse(newMatch.parsed_data)
+          } catch (e) {
+          }
+        }
+
+        if (!res.headersSent) {
+          success(res, { ...newMatch, parsed_data_obj: parsedDataObj }, '上传成功')
+        }
+      } catch (err) {
+        if (!res.headersSent) {
+          error(res, err.message)
+        }
+      }
+    })
+
+    bb.on('error', (err) => {
+      if (!res.headersSent) {
+        error(res, '文件上传处理失败: ' + err.message, 500)
+      }
+    })
+
+    req.pipe(bb)
   },
 
   // 其他原有方法...

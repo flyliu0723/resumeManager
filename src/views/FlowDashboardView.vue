@@ -366,6 +366,18 @@ const filteredBoards = computed(() => {
       items = items.filter(item => item.positionId === selectedPosition.value)
     }
     
+    // 【新增】过滤终态候选人（流程已结束/不合适的不展示）
+    items = items.filter(item => {
+      // 排除主状态为 rejected（不合适）的候选人
+      if (item.mainStatus === 'rejected') return false
+      // 排除子状态为终态的候选人（面试不通过、谈薪失败、已入职、放弃入职等）
+      if (item.subStatus) {
+        const subStatusConfig = StatusUtils.getSubStatus(item.mainStatus, item.subStatus)
+        if (subStatusConfig && subStatusConfig.isTerminal) return false
+      }
+      return true
+    })
+    
     // 排序
     if (sortBy.value === 'daysDesc') {
       items.sort((a, b) => b.daysInStage - a.daysInStage)

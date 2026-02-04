@@ -132,16 +132,24 @@ export function useDashboardData() {
   const fetchActivities = async () => {
     loadingActivities.value = true
     try {
+      console.log('\n========== [前端获取操作动态] ==========')
+      console.log('[前端] 请求时间:', new Date().toLocaleString('zh-CN'))
+
       // 使用 dashboard API，它从流程日志表获取数据
       const response = await fetch('/api/dashboard/activities?limit=50')
       const data = await response.json()
-      
+
+      console.log('[前端] 收到数据条数:', data.data?.length || 0)
+      if (data.data && data.data.length > 0) {
+        console.log('[前端] 最新一条数据:', JSON.stringify(data.data[0], null, 2))
+      }
+
       if (data.success && data.data && Array.isArray(data.data)) {
         // 过滤最近7天的数据
         const sevenDaysAgo = new Date()
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
         sevenDaysAgo.setHours(0, 0, 0, 0)
-        
+
         const filteredData = data.data.filter(item => {
           // 处理缺少 created_at 的情况：使用当前时间作为默认值
           if (!item.created_at) {
@@ -152,7 +160,12 @@ export function useDashboardData() {
           const isValid = itemDate >= sevenDaysAgo
           return isValid
         })
-        
+
+        console.log('[前端] 过滤后数据条数:', filteredData.length)
+        if (filteredData.length > 0) {
+          console.log('[前端] 过滤后最新一条:', JSON.stringify(filteredData[0], null, 2))
+        }
+
         activityItems.value = filteredData.map((item, idx) => {
           // 根据目标主状态确定阶段类型和颜色
           const mainStatusTo = item.main_status_to

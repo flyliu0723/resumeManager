@@ -13,11 +13,14 @@ const activitiesRouter = require('./activities')
 const interviewRoundsRouter = require('./interviewRounds')
 const interviewRejectionsRouter = require('./interviewRejections')
 const dashboardRouter = require('./dashboard')
+const recommendRouter = require('./recommend')
+const skillSynonymsRouter = require('./skillSynonyms')
 
 const router = express.Router()
 
 router.use('/positions', positionsRouter)
 router.use('/positions', positionResumesRouter)
+router.use('/positions', recommendRouter)
 router.use('/positions', notesRouter)
 router.use('/resumes', resumesRouter)
 router.use('/ai-configs', aiConfigsRouter)
@@ -31,5 +34,6 @@ router.use('/activities', activitiesRouter)
 router.use('/interview-rounds', interviewRoundsRouter)
 router.use('/interview-rejections', interviewRejectionsRouter)
 router.use('/dashboard', dashboardRouter)
+router.use('/skill-synonyms', skillSynonymsRouter)
 
 module.exports = router

@@ -10,7 +10,7 @@ class ApiError extends Error {
 
 async function request(url, options = {}) {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`
-  
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
@@ -26,14 +26,29 @@ async function request(url, options = {}) {
     config.body = JSON.stringify(config.body)
   }
 
-  const response = await fetch(fullUrl, config)
-  const result = await response.json()
+  const controller = new AbortController()
+  config.signal = controller.signal
 
-  if (!result.success) {
-    throw new ApiError(result.message || '请求失败', result.code || 500)
+  // 设置5分钟超时
+  const timeoutId = setTimeout(() => controller.abort(), 300000)
+
+  try {
+    const response = await fetch(fullUrl, config)
+    clearTimeout(timeoutId)
+    const result = await response.json()
+
+    if (!result.success) {
+      throw new ApiError(result.message || '请求失败', result.code || 500)
+    }
+
+    return result.data
+  } catch (err) {
+    clearTimeout(timeoutId)
+    if (err.name === 'AbortError') {
+      throw new ApiError('请求超时', 408)
+    }
+    throw err
   }
-
-  return result.data
 }
 
 export const api = {

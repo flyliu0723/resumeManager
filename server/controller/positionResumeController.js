@@ -100,67 +100,64 @@ const positionResumeController = {
   },
 
   create: (req, res) => {
-    try {
-      console.log('\n========== 开始处理文件上传 ==========')
-      console.log('请求头:', JSON.stringify(req.headers, null, 2))
-      console.log('Position ID:', req.params.positionId)
-      
-      let positionId = req.params.positionId
-      let recordFileName = ''
-      let size = 0
-      let type = ''
-      let filePath = ''
-      let tempFilePath = ''
-      let source = 'other'
-      let note = ''
-      
-      const bb = busboy({ 
-        headers: req.headers, 
-        defParamCharset: 'utf8',
-        limits: {
-          fileSize: 50 * 1024 * 1024 // 50MB limit
-        }
-      })
-      
-      bb.on('file', (name, file, info) => {
-        console.log('接收到文件:', { name, filename: info.filename, mimeType: info.mimeType })
-        
-        type = info.mimeType
-        recordFileName = info.filename || 'unknown'
+    const positionId = req.params.positionId
+    let recordFileName = ''
+    let size = 0
+    let type = ''
+    let filePath = ''
+    let tempFilePath = ''
+    let source = 'other'
+    let note = ''
+    let hasError = false
 
-        const timestamp = Date.now()
-        const originalName = info.filename || 'file'
-        const ext = path.extname(originalName)
-        const baseName = path.basename(originalName, ext)
+    const bb = busboy({
+      headers: req.headers,
+      defParamCharset: 'utf8',
+      limits: {
+        fileSize: 50 * 1024 * 1024
+      }
+    })
 
-        const fileName = `${timestamp}_${baseName}${ext}`
-        filePath = path.join(UPLOAD_DIR, fileName)
-        tempFilePath = filePath + '.tmp'
-        const writeStream = fs.createWriteStream(tempFilePath)
+    bb.on('file', (name, file, info) => {
+      type = info.mimeType
+      recordFileName = info.filename || 'unknown'
 
-        file.on('data', (data) => {
-          writeStream.write(data)
-          size += data.length
-        })
+      const timestamp = Date.now()
+      const originalName = info.filename || 'file'
+      const ext = path.extname(originalName)
+      const baseName = path.basename(originalName, ext)
 
-        file.on('end', () => writeStream.end())
-        
-        file.on('error', (err) => {
-          console.error('文件流错误:', err)
-        })
-      })
-      
-      bb.on('field', (name, val, info) => {
-        console.log('接收到字段:', { name, value: val, info })
-        if (name === 'source') {
-          source = val
-        } else if (name === 'note') {
-          note = val
-        }
+      const fileName = `${timestamp}_${baseName}${ext}`
+      filePath = path.join(UPLOAD_DIR, fileName)
+      tempFilePath = filePath + '.tmp'
+      const writeStream = fs.createWriteStream(tempFilePath)
+
+      file.on('data', (data) => {
+        writeStream.write(data)
+        size += data.length
       })
 
-      bb.on('close', async () => {
+      file.on('end', () => writeStream.end())
+
+      file.on('error', (err) => {
+        hasError = true
+      })
+    })
+
+    bb.on('field', (name, val) => {
+      if (name === 'source') {
+        source = val
+      } else if (name === 'note') {
+        note = val
+      }
+    })
+
+    bb.on('close', async () => {
       try {
+        if (hasError) {
+          return error(res, '文件上传失败', 500)
+        }
+
         if (!recordFileName) {
           return error(res, '没有上传文件', 400)
         }
@@ -184,11 +181,9 @@ const positionResumeController = {
 
         const result = await parserFactory.parse(filePath, recordFileName, positionId)
 
-        // 获取文件格式
         const ext = path.extname(recordFileName).toLowerCase()
         const fileFormat = ext === '.pdf' ? 'PDF' : ext === '.docx' ? 'DOCX' : ext === '.doc' ? 'DOC' : 'OTHER'
 
-        // 生成相对路径用于数据库存储
         const timestamp = Date.now()
         const originalName = recordFileName || 'file'
         const fileExt = path.extname(originalName)
@@ -196,16 +191,8 @@ const positionResumeController = {
         const storedFileName = `${timestamp}_${baseName}${fileExt}`
         const relativeFilePath = DB_PATH_PREFIX + storedFileName
 
-        // 重命名文件为带时间戳的名称
         const finalFilePath = path.join(UPLOAD_DIR, storedFileName)
         fs.renameSync(filePath, finalFilePath)
-
-        console.log('文件存储信息:', {
-          originalName: recordFileName,
-          storedFileName: storedFileName,
-          relativePath: relativeFilePath,
-          absolutePath: finalFilePath
-        })
 
         const parsedData = JSON.stringify({
           name: result.candidateName,
@@ -243,7 +230,6 @@ const positionResumeController = {
 
         const matchResult = positionResumeStmt.insert(insertResult.lastInsertRowid, positionId)
 
-        // 记录简历上传事件
         try {
           interviewEventStmt.insert('resume_upload', matchResult.lastInsertRowid, Number(positionId), {
             stageAfter: '新候选人',
@@ -255,7 +241,6 @@ const positionResumeController = {
               fileFormat: fileFormat
             }
           })
-          console.log('记录简历上传事件成功:', { matchId: matchResult.lastInsertRowid, positionId })
         } catch (eventErr) {
           console.error('记录简历上传事件失败:', eventErr)
         }
@@ -271,27 +256,26 @@ const positionResumeController = {
           try {
             parsedDataObj = JSON.parse(newMatch.parsed_data)
           } catch (e) {
-            console.warn('解析 parsed_data 失败:', e)
           }
         }
 
-        success(res, { ...newMatch, parsed_data_obj: parsedDataObj }, '上传成功')
+        if (!res.headersSent) {
+          success(res, { ...newMatch, parsed_data_obj: parsedDataObj }, '上传成功')
+        }
       } catch (err) {
-        error(res, err.message)
+        if (!res.headersSent) {
+          error(res, err.message)
+        }
       }
     })
 
     bb.on('error', (err) => {
-      console.error('Busboy错误:', err)
-      error(res, '文件上传处理失败: ' + err.message, 500)
+      if (!res.headersSent) {
+        error(res, '文件上传处理失败: ' + err.message, 500)
+      }
     })
-    
+
     req.pipe(bb)
-    
-  } catch (err) {
-    console.error('上传处理错误:', err)
-    error(res, err.message, 500)
-  }
   },
 
   updateStatus: (req, res) => {

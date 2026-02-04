@@ -2,6 +2,11 @@ const initSqlJs = require('sql.js')
 const fs = require('fs')
 const path = require('path')
 
+// 获取本地时间（格式：YYYY-MM-DD HH:MM:SS）
+function getLocalDateTime() {
+  return new Date().toLocaleString('zh-CN', { hour12: false })
+}
+
 // 检测是否在 pkg 打包环境中，决定数据库路径
 const isPackaged = process.pkg !== undefined
 const DATA_DIR = isPackaged 
@@ -147,6 +152,11 @@ async function initDatabase() {
     if (!columns.includes('source')) {
       db.run('ALTER TABLE resumes ADD COLUMN source TEXT DEFAULT "other"')
       console.log('添加 source 字段到 resumes 表')
+    }
+
+    if (!columns.includes('note')) {
+      db.run('ALTER TABLE resumes ADD COLUMN note TEXT DEFAULT ""')
+      console.log('添加 note 字段到 resumes 表')
     }
   }
 
@@ -418,6 +428,49 @@ async function initDatabase() {
     console.log('创建 interview_rejections 表')
   }
 
+  // JD-简历匹配结果表
+  const jdResumeMatchesCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='jd_resume_matches'")
+  if (jdResumeMatchesCheck.length === 0) {
+    db.run(`
+      CREATE TABLE jd_resume_matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        position_id INTEGER NOT NULL,
+        resume_id INTEGER NOT NULL,
+        match_score INTEGER,
+        skill_score INTEGER,
+        experience_score INTEGER,
+        education_score INTEGER,
+        matched_skills TEXT,
+        missing_skills TEXT,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY (position_id) REFERENCES positions(id),
+        FOREIGN KEY (resume_id) REFERENCES resumes(id),
+        UNIQUE(position_id, resume_id)
+      )
+    `)
+    db.run('CREATE INDEX idx_matches_position ON jd_resume_matches(position_id)')
+    db.run('CREATE INDEX idx_matches_resume ON jd_resume_matches(resume_id)')
+    db.run('CREATE INDEX idx_matches_score ON jd_resume_matches(match_score DESC)')
+    console.log('创建 jd_resume_matches 表')
+  }
+
+  // 技能-简历索引表
+  const skillResumeIndexCheck = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='skill_resume_index'")
+  if (skillResumeIndexCheck.length === 0) {
+    db.run(`
+      CREATE TABLE skill_resume_index (
+        skill_name TEXT NOT NULL,
+        resume_id INTEGER NOT NULL,
+        PRIMARY KEY (skill_name, resume_id),
+        FOREIGN KEY (resume_id) REFERENCES resumes(id)
+      )
+    `)
+    db.run('CREATE INDEX idx_skill_name ON skill_resume_index(skill_name)')
+    console.log('创建 skill_resume_index 表')
+  }
+
   saveDatabase()
   
   return db
@@ -492,7 +545,10 @@ const positionStmt = {
     return { lastInsertRowid: lastId }
   },
   update: (id, name, company, description, start_date) => run('UPDATE positions SET name = ?, company = ?, description = ?, start_date = ? WHERE id = ?', [name, company || '', description || '', start_date || '', Number(id)]),
-  archive: (id, reason) => run('UPDATE positions SET status = ?, archive_reason = ?, archived_at = CURRENT_TIMESTAMP WHERE id = ?', ['archived', reason || '', Number(id)]),
+   archive: (id, reason) => {
+    const now = getLocalDateTime()
+    run('UPDATE positions SET status = ?, archive_reason = ?, archived_at = ? WHERE id = ?', ['archived', reason || '', now, Number(id)])
+   },
   restore: (id) => run('UPDATE positions SET status = ?, archive_reason = ?, archived_at = ? WHERE id = ?', ['active', '', null, Number(id)]),
   delete: (id) => run('DELETE FROM positions WHERE id = ?', [Number(id)]),
   getAll: () => all('SELECT * FROM positions ORDER BY created_at DESC'),
@@ -501,20 +557,22 @@ const positionStmt = {
   getById: (id) => get('SELECT * FROM positions WHERE id = ?', [Number(id)]),
   
   // 更新JD解析结果
-  updateParsedJD: (id, parsedData) => {
+   updateParsedJD: (id, parsedData) => {
     const { skills, education, experience, companies, jdContent } = parsedData
+    const now = getLocalDateTime()
     run(
-      'UPDATE positions SET parsed_skills = ?, parsed_education = ?, parsed_experience = ?, parsed_companies = ?, parsed_jd_content = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?',
+      'UPDATE positions SET parsed_skills = ?, parsed_education = ?, parsed_experience = ?, parsed_companies = ?, parsed_jd_content = ?, parsed_at = ? WHERE id = ?',
       [
         skills ? JSON.stringify(skills) : null,
         education || null,
         experience || null,
         companies ? JSON.stringify(companies) : null,
         jdContent || null,
+        now,
         Number(id)
       ]
     )
-  },
+   },
   
   // 更新单个解析字段（用于编辑）
   updateParsedField: (id, field, value) => {
@@ -530,6 +588,12 @@ const positionStmt = {
       // 普通文本字段
       run(`UPDATE positions SET ${field} = ? WHERE id = ?`, [value || null, Number(id)])
     }
+  },
+
+  // 清理职位的推荐匹配数据（归档或删除时调用）
+  clearRecommendations: (id) => {
+    jdResumeMatchStmt.deleteByPosition(id)
+    console.log(`[DB] 清理职位 ${id} 的推荐匹配数据`)
   }
 }
 
@@ -560,33 +624,22 @@ const positionNoteStmt = {
   getById: (id) => get('SELECT * FROM position_notes WHERE id = ?', [Number(id)])
 }
 
-const resumeStmt = {
-  insert: (name, size, type, file_path, file_format, candidate_name, content, source = 'other', note = '') => {
-    console.log('\n========== 数据库插入简历 ==========')
-    console.log('name:', name)
-    console.log('size:', size)
-    console.log('type:', type)
-    console.log('file_path:', file_path)
-    console.log('file_format:', file_format)
-    console.log('candidate_name:', candidate_name)
-    console.log('source:', source)
-    console.log('note:', note)
-    
-    const result = db.run('INSERT INTO resumes (name, size, type, file_path, file_format, candidate_name, content, source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', 
+ const resumeStmt = {
+   insert: (name, size, type, file_path, file_format, candidate_name, content, source = 'other', note = '') => {
+    const result = db.run('INSERT INTO resumes (name, size, type, file_path, file_format, candidate_name, content, source, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [String(name), String(size), String(type), String(file_path), String(file_format), String(candidate_name), String(content || ''), String(source), String(note || '')])
-    
+
     let lastId = lastInsertRowid()
-    console.log('lastInsertRowid:', lastId)
     saveDatabase()
-    console.log('==========================================\n')
-    
+
     return { lastInsertRowid: lastId }
-  },
+   },
   updateContent: (id, candidate_name, content) => run('UPDATE resumes SET candidate_name = ?, content = ? WHERE id = ?', [candidate_name, content, Number(id)]),
-  updateParsedData: (id, parsed_data, candidate_name, content, parser, model) => {
-    const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, parsed_at = CURRENT_TIMESTAMP WHERE id = ?'
-    run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), Number(id)])
-  },
+   updateParsedData: (id, parsed_data, candidate_name, content, parser, model) => {
+    const now = getLocalDateTime()
+    const sql = 'UPDATE resumes SET parsed_data = ?, candidate_name = ?, content = ?, parser = ?, model = ?, parsed_at = ? WHERE id = ?'
+    run(sql, [String(parsed_data || ''), String(candidate_name || ''), String(content || ''), String(parser || ''), String(model || ''), now, Number(id)])
+   },
   delete: (id) => run('DELETE FROM resumes WHERE id = ?', [Number(id)]),
   getById: (id) => get('SELECT * FROM resumes WHERE id = ?', [Number(id)]),
   getAll: () => all('SELECT * FROM resumes ORDER BY created_at DESC')
@@ -642,13 +695,36 @@ const positionResumeStmt = {
     const sql = 'UPDATE position_resumes SET evaluation = ?, match_score = ?, questions = ? WHERE id = ?'
     run(sql, [String(evaluation), Number(match_score), String(questions), Number(id)])
   },
-  // 旧版updateStatus（兼容）
+  // 旧版updateStatus（兼容）- 同时更新新状态系统字段
   updateStatus: (id, status, note, jdSupplement, updateFlowStartAt = false, nextInterviewAt = null) => {
-    let sql = 'UPDATE position_resumes SET current_status = ?, status = ?, jd_supplement = ?, update_time = CURRENT_TIMESTAMP'
-    const params = [String(status), String(status), String(jdSupplement || ''), Number(id)]
+    // 旧状态到新状态系统的映射
+    const statusMapping = {
+      '待沟通': { main: 'resume_screening', sub: 'pending_review' },
+      '待筛选': { main: 'resume_screening', sub: 'pending_review' },
+      '筛选通过': { main: 'resume_screening', sub: 'screening_passed' },
+      '已拒绝': { main: 'rejected', sub: 'screening_rejected' },
+      '不合适': { main: 'rejected', sub: 'screening_rejected' },
+      '待面试': { main: 'interviewing', sub: 'round_pending' },
+      '面试中': { main: 'interviewing', sub: 'round_scheduled' },
+      '面试通过': { main: 'interviewing', sub: 'round_passed' },
+      '面试未通过': { main: 'rejected', sub: 'interview_rejected' },
+      '谈薪中': { main: 'salary_negotiation', sub: 'approval_pending' },
+      '已发Offer': { main: 'salary_negotiation', sub: 'offer_sent' },
+      '已接受': { main: 'closed', sub: 'pending_onboard' },
+      '已成单': { main: 'closed', sub: 'pending_onboard' },
+      '已入职': { main: 'closed', sub: 'onboarded' },
+      '已放弃': { main: 'rejected', sub: 'onboard_abandoned' }
+    }
     
+    const mapped = statusMapping[String(status)] || { main: 'resume_screening', sub: 'pending_review' }
+
+    const now = getLocalDateTime()
+    let sql = 'UPDATE position_resumes SET current_status = ?, status = ?, main_status = ?, sub_status = ?, jd_supplement = ?, update_time = ?'
+    const params = [String(status), String(status), mapped.main, mapped.sub, String(jdSupplement || ''), now]
+
     if (updateFlowStartAt) {
-      sql += ', flow_start_at = CURRENT_TIMESTAMP'
+      sql += ', flow_start_at = ?'
+      params.push(now)
     }
     
     if (nextInterviewAt) {
@@ -660,10 +736,12 @@ const positionResumeStmt = {
     
     sql += ' WHERE id = ?'
     run(sql, params)
+    
+    console.log(`[DB] 状态更新: ID=${id}, 旧状态=${status}, 新主状态=${mapped.main}, 新子状态=${mapped.sub}`)
   },
 
   // 新版updateStatus（支持新状态系统）
-  updateStatusNew: (id, mainStatus, subStatus, options = {}) => {
+   updateStatusNew: (id, mainStatus, subStatus, options = {}) => {
     const {
       interviewRound = null,
       currentRoundId = null,
@@ -671,37 +749,55 @@ const positionResumeStmt = {
       updateFlowStartAt = false
     } = options
 
-    let sql = 'UPDATE position_resumes SET main_status = ?, sub_status = ?, current_status = ?, status = ?, update_time = CURRENT_TIMESTAMP'
-    const params = [String(mainStatus), String(subStatus), String(subStatus), String(subStatus)]
+    const now = getLocalDateTime()
+
+    console.log('\n========== [positionResumeStmt.updateStatusNew] ==========')
+    console.log('[PR] ID:', id)
+    console.log('[PR] 新主状态:', mainStatus)
+    console.log('[PR] 新子状态:', subStatus)
+    console.log('[PR] 更新时间:', now)
+    console.log('[PR] 更新flow_start_at:', updateFlowStartAt)
+
+    let sql = 'UPDATE position_resumes SET main_status = ?, sub_status = ?, current_status = ?, status = ?, update_time = ?'
+    const params = [String(mainStatus), String(subStatus), String(subStatus), String(subStatus), now]
 
     if (interviewRound !== null) {
       sql += ', interview_round = ?'
       params.push(Number(interviewRound))
+      console.log('[PR] 面试轮次:', interviewRound)
     }
 
     if (currentRoundId !== null) {
       sql += ', current_round_id = ?'
       params.push(Number(currentRoundId))
+      console.log('[PR] 当前轮次ID:', currentRoundId)
     }
 
     if (nextInterviewAt !== undefined) {
       if (nextInterviewAt) {
         sql += ', next_interview_at = ?'
         params.push(String(nextInterviewAt))
+        console.log('[PR] 面试时间:', nextInterviewAt)
       } else {
         sql += ', next_interview_at = NULL'
+        console.log('[PR] 面试时间: NULL')
       }
     }
 
     if (updateFlowStartAt) {
-      sql += ', flow_start_at = CURRENT_TIMESTAMP'
+      sql += ', flow_start_at = ?'
+      params.push(now)
     }
 
     sql += ' WHERE id = ?'
     params.push(Number(id))
 
+    console.log('[PR] SQL:', sql)
+    console.log('[PR] Params:', params)
+
     run(sql, params)
-  },
+    console.log('[PR] 更新完成')
+   },
 
   // 更新面试轮次信息
   updateInterviewRound: (id, interviewRound, currentRoundId) => {
@@ -727,7 +823,7 @@ const flowLogStmt = {
   },
 
   // 新版insert（支持新状态系统）
-  insertWithNewStatus: (matchId, mainStatusFrom, mainStatusTo, subStatusFrom, subStatusTo, options = {}) => {
+   insertWithNewStatus: (matchId, mainStatusFrom, mainStatusTo, subStatusFrom, subStatusTo, options = {}) => {
     const {
       actionType = 'status_change',
       note = '',
@@ -735,11 +831,21 @@ const flowLogStmt = {
       metadata = null
     } = options
 
+    const now = getLocalDateTime()
+
+    console.log('\n========== [flowLogStmt.insertWithNewStatus] ==========')
+    console.log('[flowLog] 时间:', now)
+    console.log('[flowLog] matchId:', matchId)
+    console.log('[flowLog] 状态变更:', mainStatusFrom, '→', mainStatusTo)
+    console.log('[flowLog] 子状态:', subStatusFrom, '→', subStatusTo)
+    console.log('[flowLog] actionType:', actionType)
+    console.log('[flowLog] 备注:', note)
+
     const result = db.run(
-      `INSERT INTO position_resume_flow_logs 
-       (match_id, from_status, to_status, main_status_from, main_status_to, sub_status_from, sub_status_to, 
-        action_type, note, round_id, metadata_json, jd_supplement) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO position_resume_flow_logs
+       (match_id, from_status, to_status, main_status_from, main_status_to, sub_status_from, sub_status_to,
+        action_type, note, round_id, metadata_json, jd_supplement, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         Number(matchId),
         String(subStatusFrom || ''),
@@ -752,12 +858,14 @@ const flowLogStmt = {
         String(note || ''),
         roundId ? Number(roundId) : null,
         metadata ? JSON.stringify(metadata) : null,
-        ''
+        '',
+        now
       ]
     )
     saveDatabase()
+    console.log('[flowLog] 插入成功, lastInsertRowid:', result.lastInsertRowid)
     return { lastInsertRowid: result.lastInsertRowid }
-  },
+   },
 
   getByMatchId: (matchId) => {
     return all('SELECT * FROM position_resume_flow_logs WHERE match_id = ? ORDER BY created_at ASC', [Number(matchId)])
@@ -807,14 +915,15 @@ const aiConfigStmt = {
     return { lastInsertRowid: result.lastInsertRowid }
   },
   
-  update: (id, name, provider, api_key, api_url, model, is_active, priority) => {
-    const sql = `UPDATE ai_configs SET 
-      name = ?, provider = ?, api_key = ?, api_url = ?, model = ?, 
-      is_active = ?, priority = ?, updated_at = CURRENT_TIMESTAMP 
+   update: (id, name, provider, api_key, api_url, model, is_active, priority) => {
+    const now = getLocalDateTime()
+    const sql = `UPDATE ai_configs SET
+      name = ?, provider = ?, api_key = ?, api_url = ?, model = ?,
+      is_active = ?, priority = ?, updated_at = ?
       WHERE id = ?`
-    return run(sql, [String(name), String(provider), String(api_key || ''), String(api_url || ''), 
-      String(model || ''), Number(is_active), Number(priority), Number(id)])
-  },
+    return run(sql, [String(name), String(provider), String(api_key || ''), String(api_url || ''),
+      String(model || ''), Number(is_active), Number(priority), now, Number(id)])
+   },
   
   setActive: (id) => {
     run('UPDATE ai_configs SET is_active = 0')
@@ -868,12 +977,12 @@ const aiConfigStmt = {
   }
 }
 
-// 面试事件操作语句
-const interviewEventStmt = {
-  // 插入事件
-  insert: (eventType, candidateId, positionId, options = {}) => {
+ // 面试事件操作语句
+ const interviewEventStmt = {
+   // 插入事件
+   insert: (eventType, candidateId, positionId, options = {}) => {
     const {
-      eventTime = new Date().toISOString(),
+      eventTime = new Date().toISOString().replace('T', ' ').slice(0, 19),
       stageBefore = null,
       stageAfter = null,
       durationSeconds = null,
@@ -884,9 +993,17 @@ const interviewEventStmt = {
 
     const detailsJson = details ? JSON.stringify(details) : null
 
+    console.log('\n========== [interviewEventStmt.insert] ==========')
+    console.log('[event] 时间:', eventTime)
+    console.log('[event] 事件类型:', eventType)
+    console.log('[event] 候选人ID:', candidateId)
+    console.log('[event] 职位ID:', positionId)
+    console.log('[event] 阶段变更:', stageBefore, '→', stageAfter)
+    console.log('[event] 来源:', source)
+
     const result = db.run(
-      `INSERT INTO interview_events 
-       (event_time, candidate_id, position_id, event_type, stage_before, stage_after, duration_seconds, details, metric_value, source) 
+      `INSERT INTO interview_events
+       (event_time, candidate_id, position_id, event_type, stage_before, stage_after, duration_seconds, details, metric_value, source)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         String(eventTime),
@@ -902,8 +1019,9 @@ const interviewEventStmt = {
       ]
     )
     saveDatabase()
+    console.log('[event] 插入成功, lastInsertRowid:', result.lastInsertRowid)
     return { lastInsertRowid: result.lastInsertRowid }
-  },
+   },
 
   // 根据ID查询
   getById: (id) => {
@@ -1070,11 +1188,13 @@ const interviewRoundStmt = {
       location = null
     } = options
 
+    const now = getLocalDateTime()
+
     const result = db.run(
-      `INSERT INTO interview_rounds 
-       (match_id, round_number, round_type, interviewer_id, interviewer_name, interviewer_role, 
-        scheduled_at, duration_minutes, location, status, created_at, updated_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `INSERT INTO interview_rounds
+       (match_id, round_number, round_type, interviewer_id, interviewer_name, interviewer_role,
+        scheduled_at, duration_minutes, location, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       [
         Number(matchId),
         Number(roundNumber),
@@ -1084,7 +1204,9 @@ const interviewRoundStmt = {
         interviewerRole ? String(interviewerRole) : null,
         scheduledAt ? String(scheduledAt) : null,
         durationMinutes ? Number(durationMinutes) : null,
-        location ? String(location) : null
+        location ? String(location) : null,
+        now,
+        now
       ]
     )
     saveDatabase()
@@ -1101,8 +1223,9 @@ const interviewRoundStmt = {
       candidateFeedback = null
     } = options
 
-    let sql = 'UPDATE interview_rounds SET updated_at = CURRENT_TIMESTAMP'
-    const params = []
+    const now = getLocalDateTime()
+    let sql = 'UPDATE interview_rounds SET updated_at = ?'
+    const params = [now]
 
     if (status) {
       sql += ', status = ?'
@@ -1305,14 +1428,16 @@ const interviewRejectionStmt = {
       relatedRoundId = null
     } = options
 
+    const now = getLocalDateTime()
+
     const result = db.run(
       `INSERT INTO interview_rejections (
         match_id, rejected_at_stage, rejected_at_sub_status,
         rejection_category, rejection_reason_code, rejection_reason_detail,
         rejected_by, rejected_by_name, rejected_by_role,
         internal_notes, candidate_feedback,
-        is_reopenable, reopen_conditions, related_round_id, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        is_reopenable, reopen_conditions, related_round_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         Number(matchId),
         String(rejectedAtStage),
@@ -1325,9 +1450,11 @@ const interviewRejectionStmt = {
         rejectedByRole ? String(rejectedByRole) : null,
         internalNotes ? String(internalNotes) : null,
         candidateFeedback ? String(candidateFeedback) : null,
-        isReopenable ? 1 : 0,
+        isReopenable ? Number(isReopenable) : 0,
         reopenConditions ? String(reopenConditions) : null,
-        relatedRoundId ? Number(relatedRoundId) : null
+        relatedRoundId ? Number(relatedRoundId) : null,
+        now,
+        now
       ]
     )
     saveDatabase()
@@ -1384,8 +1511,9 @@ const interviewRejectionStmt = {
       internalNotes = null
     } = options
 
-    let sql = 'UPDATE interview_rejections SET updated_at = CURRENT_TIMESTAMP'
-    const params = []
+    const now = getLocalDateTime()
+    let sql = 'UPDATE interview_rejections SET updated_at = ?'
+    const params = [now]
 
     if (isReopenable !== null) {
       sql += ', is_reopenable = ?'
@@ -1417,6 +1545,172 @@ const interviewRejectionStmt = {
   }
 }
 
+// JD-简历匹配结果表 DAO
+ const jdResumeMatchStmt = {
+   // 插入或更新匹配结果
+   upsert: (positionId, resumeId, matchData) => {
+    const { matchScore, skillScore, experienceScore, educationScore, matchedSkills, missingSkills } = matchData
+
+    const now = getLocalDateTime()
+
+    // 先检查是否已存在
+    const existing = get('SELECT id FROM jd_resume_matches WHERE position_id = ? AND resume_id = ?', [Number(positionId), Number(resumeId)])
+
+    if (existing) {
+      // 更新
+      run(
+        `UPDATE jd_resume_matches SET
+         match_score = ?, skill_score = ?, experience_score = ?, education_score = ?,
+         matched_skills = ?, missing_skills = ?, updated_at = ?
+         WHERE position_id = ? AND resume_id = ?`,
+        [
+          matchScore, skillScore, experienceScore, educationScore,
+          matchedSkills ? JSON.stringify(matchedSkills) : null,
+          missingSkills ? JSON.stringify(missingSkills) : null,
+          now,
+          Number(positionId), Number(resumeId)
+        ]
+      )
+    } else {
+      // 插入
+      run(
+        `INSERT INTO jd_resume_matches 
+         (position_id, resume_id, match_score, skill_score, experience_score, education_score, matched_skills, missing_skills) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          Number(positionId), Number(resumeId), matchScore, skillScore, experienceScore, educationScore,
+          matchedSkills ? JSON.stringify(matchedSkills) : null,
+          missingSkills ? JSON.stringify(missingSkills) : null
+        ]
+      )
+    }
+    saveDatabase()
+  },
+
+  // 获取职位的推荐简历列表（按分数排序）
+  getRecommendationsByPosition: (positionId, minScore = 60, limit = 10, offset = 0) => {
+    return all(
+      `SELECT 
+        m.*,
+        r.name as resume_name,
+        r.candidate_name,
+        r.parsed_data
+      FROM jd_resume_matches m
+      JOIN resumes r ON m.resume_id = r.id
+      WHERE m.position_id = ? AND m.match_score >= ?
+      ORDER BY m.match_score DESC
+      LIMIT ? OFFSET ?`,
+      [Number(positionId), minScore, Number(limit), Number(offset)]
+    )
+  },
+
+  // 获取职位的推荐总数
+  getRecommendationCount: (positionId, minScore = 60) => {
+    const result = get(
+      'SELECT COUNT(*) as count FROM jd_resume_matches WHERE position_id = ? AND match_score >= ?',
+      [Number(positionId), minScore]
+    )
+    return result ? result.count : 0
+  },
+
+  // 更新匹配状态
+   updateStatus: (positionId, resumeId, status) => {
+    const now = getLocalDateTime()
+    run(
+      'UPDATE jd_resume_matches SET status = ?, updated_at = ? WHERE position_id = ? AND resume_id = ?',
+      [String(status), now, Number(positionId), Number(resumeId)]
+    )
+   },
+
+  // 删除职位的所有匹配记录
+  deleteByPosition: (positionId) => {
+    run('DELETE FROM jd_resume_matches WHERE position_id = ?', [Number(positionId)])
+  },
+
+  // 获取单个匹配记录
+  getByPositionAndResume: (positionId, resumeId) => {
+    return get(
+      `SELECT 
+        m.*,
+        r.name as resume_name,
+        r.candidate_name,
+        r.parsed_data
+      FROM jd_resume_matches m
+      JOIN resumes r ON m.resume_id = r.id
+      WHERE m.position_id = ? AND m.resume_id = ?`,
+      [Number(positionId), Number(resumeId)]
+    )
+  }
+}
+
+// 技能-简历索引表 DAO
+const skillResumeIndexStmt = {
+  // 添加索引
+  add: (skillName, resumeId) => {
+    try {
+      run(
+        'INSERT OR IGNORE INTO skill_resume_index (skill_name, resume_id) VALUES (?, ?)',
+        [String(skillName).toLowerCase(), Number(resumeId)]
+      )
+    } catch (e) {
+      console.error('添加技能索引失败:', e)
+    }
+  },
+
+  // 批量添加索引
+  addBatch: (skills, resumeId) => {
+    for (const skill of skills) {
+      skillResumeIndexStmt.add(skill, resumeId)
+    }
+  },
+
+  // 根据技能查找简历
+  findBySkill: (skillName) => {
+    return all(
+      `SELECT 
+        i.resume_id,
+        r.name as resume_name,
+        r.candidate_name,
+        r.parsed_data
+      FROM skill_resume_index i
+      JOIN resumes r ON i.resume_id = r.id
+      WHERE i.skill_name = ?`,
+      [String(skillName).toLowerCase()]
+    )
+  },
+
+  // 根据多个技能查找简历（OR关系）
+  findBySkills: (skillNames) => {
+    if (!skillNames || skillNames.length === 0) return []
+    
+    const placeholders = skillNames.map(() => '?').join(',')
+    const params = skillNames.map(s => String(s).toLowerCase())
+    
+    return all(
+      `SELECT DISTINCT
+        i.resume_id,
+        r.name as resume_name,
+        r.candidate_name,
+        r.parsed_data
+      FROM skill_resume_index i
+      JOIN resumes r ON i.resume_id = r.id
+      WHERE i.skill_name IN (${placeholders})`,
+      params
+    )
+  },
+
+  // 删除简历的所有索引
+  deleteByResume: (resumeId) => {
+    run('DELETE FROM skill_resume_index WHERE resume_id = ?', [Number(resumeId)])
+  },
+
+  // 重建索引（用于批量更新）
+  rebuildForResume: (resumeId, skills) => {
+    skillResumeIndexStmt.deleteByResume(resumeId)
+    skillResumeIndexStmt.addBatch(skills, resumeId)
+  }
+}
+
 module.exports = {
   initDatabase,
   positionStmt,
@@ -1430,5 +1724,7 @@ module.exports = {
   interviewRoundStmt,      // 面试轮次表 DAO（新状态系统）
   interviewFeedbackStmt,   // 面试评价维度表 DAO（新状态系统）
   interviewRejectionStmt,  // 面试拒绝记录表 DAO（新状态系统）
+  jdResumeMatchStmt,       // JD-简历匹配结果表 DAO
+  skillResumeIndexStmt,    // 技能-简历索引表 DAO
   db
 }
