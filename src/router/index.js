@@ -5,7 +5,7 @@ import InterviewFlowView from '../views/InterviewFlowView.vue'
 import FlowDashboardView from '../views/FlowDashboardView.vue'
 import InterviewsView from '../views/InterviewsView.vue'
 import DashboardView from '../views/DashboardView.vue'
-import DashboardViewNew from '../views/DashboardViewNew.vue'
+import RecruitLogView from '../views/RecruitLogView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -19,15 +19,6 @@ const router = createRouter({
       path: '/dashboard',
       name: 'dashboard',
       component: DashboardView
-    },
-    {
-      path: '/dashboard-new',
-      name: 'dashboardNew',
-      component: DashboardViewNew,
-      meta: { 
-        title: '招聘管理中心（新）',
-        description: '支持新状态系统的 Dashboard'
-      }
     },
     {
       path: '/config',
@@ -48,6 +39,11 @@ const router = createRouter({
       path: '/interviews',
       name: 'interviews',
       component: InterviewsView
+    },
+    {
+      path: '/recruit-log',
+      name: 'recruitLog',
+      component: RecruitLogView
     }
   ]
 })

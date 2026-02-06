@@ -121,6 +121,20 @@ if (fs.existsSync(distPath)) {
 const router = require('./router')
 app.use('/api', router)
 
+// 错误处理
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler')
+
+// 404 处理 - Express 5.x 使用通配符路由
+app.all('/{*path}', (req, res, next) => {
+  const error = new Error(`请求的资源不存在: ${req.method} ${req.originalUrl}`)
+  error.statusCode = 404
+  error.code = 'NOT_FOUND'
+  next(error)
+})
+
+// 错误处理 - 放在最后
+app.use(errorHandler)
+
 async function startServer() {
   try {
     console.log('[INFO] 正在初始化数据库...')

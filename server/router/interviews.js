@@ -1,5 +1,6 @@
 const express = require('express')
 const interviewsController = require('../controller/interviewsController')
+const { validate } = require('../middleware/validator')
 
 const router = express.Router()
 
@@ -16,6 +17,6 @@ router.get('/stats/types', interviewsController.getEventTypeStats)
 router.get('/:id', interviewsController.getById)
 
 // POST /api/interviews - 手动创建事件
-router.post('/', interviewsController.create)
+router.post('/', validate('scheduleInterview'), interviewsController.create)
 
 module.exports = router

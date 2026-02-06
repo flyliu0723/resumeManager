@@ -1,13 +1,14 @@
 const express = require('express')
 const positionController = require('../controller/positionController')
 const jdParseController = require('../controller/jdParseController')
+const { validate } = require('../middleware/validator')
 
 const router = express.Router()
 
 router.get('/', positionController.getAll)
 router.get('/:id', positionController.getById)
-router.post('/', positionController.create)
-router.put('/:id', positionController.update)
+router.post('/', validate('createPosition'), positionController.create)
+router.put('/:id', validate('updatePosition'), positionController.update)
 router.delete('/:id', positionController.delete)
 router.post('/:id/archive', positionController.archive)
 router.post('/:id/restore', positionController.restore)

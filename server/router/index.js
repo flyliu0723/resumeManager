@@ -15,6 +15,7 @@ const interviewRejectionsRouter = require('./interviewRejections')
 const dashboardRouter = require('./dashboard')
 const recommendRouter = require('./recommend')
 const skillSynonymsRouter = require('./skillSynonyms')
+const recruitLogRouter = require('./recruitLog')
 
 const router = express.Router()
 
@@ -35,5 +36,6 @@ router.use('/interview-rounds', interviewRoundsRouter)
 router.use('/interview-rejections', interviewRejectionsRouter)
 router.use('/dashboard', dashboardRouter)
 router.use('/skill-synonyms', skillSynonymsRouter)
+router.use('/recruit-log', recruitLogRouter)
 
 module.exports = router

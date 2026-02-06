@@ -1,4 +1,9 @@
-const API_BASE = 'http://localhost:3000/api'
+// API 配置 - 支持环境变量
+// 开发环境: .env.local, .env.development
+// 生产环境: .env.production.local, .env.production
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api'
+const TIMEOUT = Number(import.meta.env.VITE_API_TIMEOUT) || 300000
 
 class ApiError extends Error {
   constructor(message, code = 500) {
@@ -29,8 +34,8 @@ async function request(url, options = {}) {
   const controller = new AbortController()
   config.signal = controller.signal
 
-  // 设置5分钟超时
-  const timeoutId = setTimeout(() => controller.abort(), 300000)
+  // 使用环境变量配置超时
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT)
 
   try {
     const response = await fetch(fullUrl, config)
@@ -74,3 +79,9 @@ export const api = {
 }
 
 export { ApiError }
+
+// 导出配置供其他模块使用
+export const config = {
+  API_BASE,
+  TIMEOUT
+}

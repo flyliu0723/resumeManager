@@ -259,9 +259,22 @@ export const StatusUtils = {
   },
   
   isTerminalStatus(mainStatus, subStatus) {
-    const sub = this.getSubStatus(mainStatus, subStatus)
-    if (!sub) return false
-    return sub.isTerminal || false
+    if (!mainStatus) return false
+    
+    const terminalMainStatuses = ['closed', 'rejected']
+    
+    if (!terminalMainStatuses.includes(mainStatus)) {
+      if (subStatus && (subStatus.includes('rejected') || subStatus.includes('abandoned'))) {
+        return true
+      }
+      return false
+    }
+    
+    if (mainStatus === 'closed') {
+      return subStatus === 'onboarded'
+    }
+    
+    return true
   },
   
   isSuccessStatus(mainStatus, subStatus) {

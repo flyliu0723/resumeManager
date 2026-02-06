@@ -3,71 +3,211 @@
     <h1 class="dashboard-title">招聘管理中心</h1>
     
     <div class="dashboard-layout">
-      <!-- 左侧栏 - 2份 -->
+      <!-- 左侧栏 - 操作动态 -->
       <div class="left-panel">
-        <!-- 数据统计卡片 -->
-        <div class="stats-cards">
-          <div class="stat-card blue">
-            <div class="stat-icon">
-              <el-icon><Document /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">新增简历</div>
-              <div class="stat-value">{{ statsData.resumes.value }}</div>
-              <div class="stat-change positive">较昨日 +{{ statsData.resumes.change }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card orange">
-            <div class="stat-icon">
-              <el-icon><UserFilled /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">安排面试</div>
-              <div class="stat-value">{{ statsData.interviews.value }}</div>
-              <div class="stat-change positive">较昨日 +{{ statsData.interviews.change }}</div>
-            </div>
-          </div>
-          
-          <div class="stat-card green">
-            <div class="stat-icon">
-              <el-icon><Trophy /></el-icon>
-            </div>
-            <div class="stat-content">
-              <div class="stat-label">完成Offer</div>
-              <div class="stat-value">{{ statsData.offers.value }}</div>
-              <div class="stat-change positive">较昨日 +{{ statsData.offers.change }}</div>
-            </div>
-          </div>
-        </div>
-        
         <!-- 实时动态流 -->
         <div class="activity-feed">
-          <h3 class="feed-title">操作动态</h3>
-          <div class="feed-items">
+          <div class="feed-header">
+            <h3 class="feed-title">操作动态</h3>
+            <el-tag size="small" type="info">近7天</el-tag>
+          </div>
+          <div class="feed-items" v-loading="loadingActivities">
             <div class="feed-item" v-for="(item, index) in activityItems" :key="index">
-              <div class="feed-time">{{ item.time }}</div>
+              <div class="feed-time">{{ formatTime(item.time) }}</div>
               <div class="feed-content">
-                <div class="feed-avatar" :style="{ backgroundColor: item.avatarColor }">{{ '您'|| item.avatar }}</div>
-                <div class="feed-text">{{ item.action }}</div>
+                <div class="feed-avatar" :style="{ backgroundColor: item.avatarColor }">{{ item.avatar }}</div>
+                <div class="feed-text">
+                  <span :class="['stage-badge', item.stageType]" :style="{ backgroundColor: item.stageColor + '20', color: item.stageColor, borderColor: item.stageColor }">
+                    {{ item.stageLabel }}
+                  </span>
+                  {{ item.action }}
+                </div>
               </div>
             </div>
           </div>
-          <div class="feed-more">
-            <el-button link size="small">查看更多动态</el-button>
+          <div class="feed-more" v-if="activityItems.length > 0">
+            <el-button link size="small" @click="refreshAllData">
+              <el-icon><Refresh /></el-icon> 刷新
+            </el-button>
           </div>
+          <el-empty v-else description="暂无动态" :image-size="80" />
         </div>
       </div>
       
       <!-- 右侧栏 - 3份 -->
       <div class="right-panel">
+        <!-- 招聘漏斗效率看板 -->
+        <div class="funnel-card">
+          <div class="funnel-header">
+            <h3 class="chart-title">招聘漏斗效率看板</h3>
+            <div class="funnel-metrics" v-if="funnelMetrics.conversionRate > 0">
+              <el-tag size="small" type="success">转化率 {{ funnelMetrics.conversionRate }}%</el-tag>
+              <el-tag size="small" type="warning">平均 {{ funnelMetrics.avgDays }} 天</el-tag>
+              <el-tag size="small" type="danger">流失率 {{ funnelMetrics.dropOffRate }}%</el-tag>
+            </div>
+          </div>
+          <div class="funnel-stages" v-loading="loadingFunnel">
+            <div class="funnel-stage">
+              <div class="stage-header">
+                <h4 class="stage-title">
+                  <el-icon><Document /></el-icon>
+                  简历筛选
+                  <el-tooltip :content="`共 ${funnelData.resumeScreening.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="info" class="count-tag">{{ funnelData.resumeScreening.length }}</el-tag>
+                  </el-tooltip>
+                </h4>
+              </div>
+              <div class="stage-candidates">
+                <div class="candidate-card" v-for="(candidate, index) in funnelData.resumeScreening.slice(0, 5)" :key="index">
+                  <div class="candidate-avatar" :style="{ backgroundColor: candidate.avatarColor }">{{ candidate.initials }}</div>
+                  <div class="candidate-info">
+                    <div class="candidate-name">{{ candidate.candidateName }}</div>
+                    <div class="candidate-position">{{ candidate.positionTitle }}</div>
+                  </div>
+                  <div class="candidate-days" v-if="candidate.daysInStage > 0">{{ candidate.daysInStage }}天</div>
+                </div>
+                <div class="candidate-more" v-if="funnelData.resumeScreening.length > 5" @click="viewAllCandidates('resume_screening')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.resumeScreening.length - 5 }} 人，查看全部
+                  </el-button>
+                </div>
+                <el-empty v-if="funnelData.resumeScreening.length === 0" description="暂无数据" :image-size="60" />
+              </div>
+            </div>
+            
+            <div class="funnel-stage">
+              <div class="stage-header">
+                <h4 class="stage-title">
+                  <el-icon><UserFilled /></el-icon>
+                  面试中
+                  <el-tooltip :content="`共 ${funnelData.interviewing.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="primary" class="count-tag">{{ funnelData.interviewing.length }}</el-tag>
+                  </el-tooltip>
+                </h4>
+              </div>
+              <div class="stage-candidates">
+                <div class="candidate-card" v-for="(candidate, index) in funnelData.interviewing.slice(0, 5)" :key="index">
+                  <div class="candidate-avatar" :style="{ backgroundColor: candidate.avatarColor }">{{ candidate.initials }}</div>
+                  <div class="candidate-info">
+                    <div class="candidate-name">{{ candidate.candidateName }}</div>
+                    <div class="candidate-position">{{ candidate.positionTitle }}</div>
+                  </div>
+                  <div class="candidate-status" :class="candidate.subStatus">
+                    {{ getSubStatusLabel(candidate.subStatus) }}
+                  </div>
+                </div>
+                <div class="candidate-more" v-if="funnelData.interviewing.length > 5" @click="viewAllCandidates('interviewing')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.interviewing.length - 5 }} 人，查看全部
+                  </el-button>
+                </div>
+                <el-empty v-if="funnelData.interviewing.length === 0" description="暂无数据" :image-size="60" />
+              </div>
+            </div>
+            
+            <div class="funnel-stage">
+              <div class="stage-header">
+                <h4 class="stage-title">
+                  <el-icon><Money /></el-icon>
+                  谈薪中
+                  <el-tooltip :content="`共 ${funnelData.salaryNegotiation.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="warning" class="count-tag">{{ funnelData.salaryNegotiation.length }}</el-tag>
+                  </el-tooltip>
+                </h4>
+              </div>
+              <div class="stage-candidates">
+                <div class="candidate-card" v-for="(candidate, index) in funnelData.salaryNegotiation.slice(0, 5)" :key="index">
+                  <div class="candidate-avatar" :style="{ backgroundColor: candidate.avatarColor }">{{ candidate.initials }}</div>
+                  <div class="candidate-info">
+                    <div class="candidate-name">{{ candidate.candidateName }}</div>
+                    <div class="candidate-position">{{ candidate.positionTitle }}</div>
+                  </div>
+                  <div class="candidate-status" :class="candidate.subStatus">
+                    {{ getSubStatusLabel(candidate.subStatus) }}
+                  </div>
+                </div>
+                <div class="candidate-more" v-if="funnelData.salaryNegotiation.length > 5" @click="viewAllCandidates('salary_negotiation')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.salaryNegotiation.length - 5 }} 人，查看全部
+                  </el-button>
+                </div>
+                <el-empty v-if="funnelData.salaryNegotiation.length === 0" description="暂无数据" :image-size="60" />
+              </div>
+            </div>
+            
+            <div class="funnel-stage">
+              <div class="stage-header">
+                <h4 class="stage-title">
+                  <el-icon><CircleCheck /></el-icon>
+                  已成单
+                  <el-tooltip :content="`共 ${funnelData.closed.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="success" class="count-tag">{{ funnelData.closed.length }}</el-tag>
+                  </el-tooltip>
+                </h4>
+              </div>
+              <div class="stage-candidates">
+                <div class="candidate-card" v-for="(candidate, index) in funnelData.closed.slice(0, 5)" :key="index">
+                  <div class="candidate-avatar" :style="{ backgroundColor: candidate.avatarColor }">{{ candidate.initials }}</div>
+                  <div class="candidate-info">
+                    <div class="candidate-name">{{ candidate.candidateName }}</div>
+                    <div class="candidate-position">{{ candidate.positionTitle }}</div>
+                  </div>
+                  <div class="candidate-status" :class="candidate.subStatus">
+                    {{ getSubStatusLabel(candidate.subStatus) }}
+                  </div>
+                </div>
+                <div class="candidate-more" v-if="funnelData.closed.length > 5" @click="viewAllCandidates('closed')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.closed.length - 5 }} 人，查看全部
+                  </el-button>
+                </div>
+                <el-empty v-if="funnelData.closed.length === 0" description="暂无数据" :image-size="60" />
+              </div>
+            </div>
+            
+            <div class="funnel-stage">
+              <div class="stage-header">
+                <h4 class="stage-title">
+                  <el-icon><CircleClose /></el-icon>
+                  已结束
+                  <el-tooltip :content="`共 ${funnelData.rejected.length} 位候选人`" placement="top">
+                    <el-tag size="small" type="danger" class="count-tag">{{ funnelData.rejected.length }}</el-tag>
+                  </el-tooltip>
+                </h4>
+              </div>
+              <div class="stage-candidates">
+                <div class="candidate-card" v-for="(candidate, index) in funnelData.rejected.slice(0, 5)" :key="index">
+                  <div class="candidate-avatar" :style="{ backgroundColor: candidate.avatarColor }">{{ candidate.initials }}</div>
+                  <div class="candidate-info">
+                    <div class="candidate-name">{{ candidate.candidateName }}</div>
+                    <div class="candidate-position">{{ candidate.positionTitle }}</div>
+                  </div>
+                  <div class="candidate-status rejected">已结束</div>
+                </div>
+                <div class="candidate-more" v-if="funnelData.rejected.length > 5" @click="viewAllCandidates('rejected')">
+                  <el-button link type="primary" size="small">
+                    还有 {{ funnelData.rejected.length - 5 }} 人，查看全部
+                  </el-button>
+                </div>
+                <el-empty v-if="funnelData.rejected.length === 0" description="暂无数据" :image-size="60" />
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <!-- 招聘热度分析图 -->
         <div class="chart-card">
-          <h3 class="chart-title">各级岗位热度</h3>
+          <div class="chart-header">
+            <h3 class="chart-title">各级岗位热度</h3>
+            <el-radio-group v-model="heatChartType" size="small">
+              <el-radio-button label="count">人数</el-radio-button>
+              <el-radio-button label="conversion">转化率</el-radio-button>
+            </el-radio-group>
+          </div>
           <div ref="heatChartRef" class="chart-container"></div>
         </div>
         
-        <!-- 中间图表区域 -->
+        <!-- 图表行 -->
         <div class="charts-row">
           <!-- 简历来源分布 -->
           <div class="chart-card donut-chart">
@@ -82,53 +222,6 @@
           </div>
         </div>
         
-        <!-- 招聘漏斗效率看板 -->
-        <div class="funnel-card">
-          <h3 class="chart-title">招聘漏斗效率看板</h3>
-          <div class="funnel-stages">
-            <div class="funnel-stage">
-              <h4 class="stage-title">初试阶段</h4>
-              <div class="stage-candidates">
-                <div class="candidate-card" v-for="(candidate, index) in funnelData.initial" :key="index">
-                  <div class="candidate-avatar">{{ candidate.name.substring(0, 1) }}</div>
-                  <div class="candidate-info">
-                    <div class="candidate-name">{{ candidate.name }}</div>
-                    <div class="candidate-position">{{ candidate.position }}</div>
-                  </div>
-                  <div class="candidate-status pending">待面试</div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="funnel-stage">
-              <h4 class="stage-title">复试阶段</h4>
-              <div class="stage-candidates">
-                <div class="candidate-card" v-for="(candidate, index) in funnelData.second" :key="index">
-                  <div class="candidate-avatar">{{ candidate.name.substring(0, 1) }}</div>
-                  <div class="candidate-info">
-                    <div class="candidate-name">{{ candidate.name }}</div>
-                    <div class="candidate-position">{{ candidate.position }}</div>
-                  </div>
-                  <div class="candidate-status in-progress">面试中</div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="funnel-stage">
-              <h4 class="stage-title">待入职</h4>
-              <div class="stage-candidates">
-                <div class="candidate-card" v-for="(candidate, index) in funnelData.final" :key="index">
-                  <div class="candidate-avatar">{{ candidate.name.substring(0, 1) }}</div>
-                  <div class="candidate-info">
-                    <div class="candidate-name">{{ candidate.name }}</div>
-                    <div class="candidate-position">{{ candidate.position }}</div>
-                  </div>
-                  <div class="candidate-status completed">已通过</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -136,12 +229,25 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
-import { Document, UserFilled, Trophy, ArrowRight, Check, Clock, Plus } from '@element-plus/icons-vue'
-import { useDashboardData } from '../composables/useDashboardData'
+import { Document, UserFilled, Money, CircleCheck, CircleClose, Refresh } from '@element-plus/icons-vue'
+import { useDashboardData } from '../composables/useDashboardData.js'
 import * as echarts from 'echarts'
 
-// 使用自定义Hook获取数据
-const { activityItems, heatData, statsData, sourceData, trendData, funnelData, refreshAllData } = useDashboardData()
+// 使用自定义Hook获取数据 - 新状态系统
+const { 
+  activityItems, 
+  heatData, 
+  sourceData, 
+  trendData, 
+  funnelData, 
+  funnelMetrics,
+  loadingActivities,
+  loadingFunnel,
+  refreshAllData 
+} = useDashboardData()
+
+// 图表类型切换
+const heatChartType = ref('count')
 
 // 图表引用
 const heatChartRef = ref(null)
@@ -153,6 +259,41 @@ let heatChart = null
 let sourceChart = null
 let trendChart = null
 
+// 时间格式化
+function formatTime(timeStr) {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+  
+  if (isToday) {
+    return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  } else {
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  }
+}
+
+// 获取子状态标签
+function getSubStatusLabel(subStatus) {
+  const labels = {
+    'pending_review': '待审核',
+    'review_passed': '已通过',
+    'review_rejected': '已拒绝',
+    'round_pending': '待安排',
+    'round_scheduled': '已安排',
+    'round_passed': '通过',
+    'round_rejected': '未通过',
+    'negotiating': '谈薪中',
+    'approval_pending': '待审批',
+    'approved': '已批准',
+    'onboarded': '已入职',
+    'pending_onboard': '待入职',
+    'rejected': '已结束',
+    'abandoned': '已放弃'
+  }
+  return labels[subStatus] || subStatus
+}
+
 // 初始化热度图表
 function initHeatChart() {
   if (heatChartRef.value) {
@@ -161,63 +302,164 @@ function initHeatChart() {
   }
 }
 
-// 更新热度图表
+// 更新热度图表 - 柱状图或折线图展示各阶段数据
 function updateHeatChart() {
   if (!heatChart) return
-  
-  // 定义数据类型和对应的颜色
-  const dataTypes = ['简历', '面试', 'Offer']
-  const typeColors = ['#409EFF', '#E6A23C', '#67C23A']
-  
-  // 为每种数据类型创建一个系列
-  const series = dataTypes.map((type, index) => ({
-    name: type,
-    type: 'bar',
-    stack: 'total',
-    emphasis: {
-      focus: 'series'
-    },
-    itemStyle: {
-      color: typeColors[index]
-    },
-    data: heatData.value.map(item => {
-      // 找到对应类型的数据
-      const bar = item.bars[index]
-      return bar ? bar.width || 0 : 0
+
+  const data = heatData.value || []
+  const isCount = heatChartType.value === 'count'
+
+  // 阶段类型
+  const stageTypes = ['简历筛选', '面试中', '谈薪中', '已成单']
+  const stageColors = ['#909399', '#409EFF', '#E6A23C', '#67C23A']
+
+  // 提取职位名称作为x轴
+  const positions = data.map(item => item.name || item.level)
+
+  if (isCount) {
+    // 人数模式：堆叠柱状图
+    const series = stageTypes.map((stageType, index) => ({
+      name: stageType,
+      type: 'bar',
+      stack: 'total',
+      emphasis: { focus: 'series' },
+      data: data.map(item => {
+        const stage = item.bars?.find(bar => bar.type === stageType)
+        return stage?.count || 0
+      }),
+      itemStyle: {
+        color: stageColors[index]
+      }
+    }))
+
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' }
+      },
+      legend: {
+        data: stageTypes,
+        bottom: 0
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: positions,
+        axisLabel: {
+          interval: 0,
+          rotate: 30,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '数量'
+      },
+      series: series
+    }
+
+    heatChart.setOption(option, true)
+  } else {
+    // 转化率模式：折线图（以简历筛选为基数100%）
+    const interviewData = data.map(item => {
+      const stage = item.bars?.find(bar => bar.type === '面试中')
+      return stage?.rate || 0
     })
-  }))
 
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: {
-        type: 'shadow'
-      }
-    },
-    legend: {
-      data: dataTypes
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'value',
-      boundaryGap: [0, 0.01],
-      axisLabel: {
-        formatter: '{value}%'
-      }
-    },
-    yAxis: {
-      type: 'category',
-      data: heatData.value.map(item => item.name)
-    },
-    series: series
+    const closedData = data.map(item => {
+      const stage = item.bars?.find(bar => bar.type === '已成单')
+      return stage?.rate || 0
+    })
+
+    const option = {
+      tooltip: {
+        trigger: 'axis',
+        formatter: function(params) {
+          const positionName = params[0].name
+          const posData = data.find(item => item.name === positionName) || {}
+          const total = posData.totalResumes || 0
+          const interview = posData.interviewCount || 0
+          const closed = posData.closedCount || 0
+
+          let result = `<div style="font-weight:600;margin-bottom:8px">${positionName}</div>`
+          result += `<div style="margin-bottom:4px">📋 简历总数: <strong>${total}</strong> (分母)</div>`
+          result += `<div style="color:#409EFF;margin-bottom:4px">🎯 面试: ${interview}人 → ${params[0].value}%</div>`
+          result += `<div style="color:#67C23A">✅ 成单: ${closed}人 → ${params[1].value}%</div>`
+          return result
+        }
+      },
+      legend: {
+        data: ['面试转化率', '成单转化率'],
+        bottom: 0
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: positions,
+        boundaryGap: false,
+        axisLabel: {
+          interval: 0,
+          rotate: 30,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '转化率(%)',
+        max: 100
+      },
+      series: [
+        {
+          name: '面试转化率',
+          type: 'line',
+          data: interviewData,
+          smooth: true,
+          itemStyle: { color: '#409EFF' },
+          lineStyle: { width: 3 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(64, 158, 255, 0.3)' },
+                { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+              ]
+            }
+          }
+        },
+        {
+          name: '成单转化率',
+          type: 'line',
+          data: closedData,
+          smooth: true,
+          itemStyle: { color: '#67C23A' },
+          lineStyle: { width: 3 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(103, 194, 58, 0.3)' },
+                { offset: 1, color: 'rgba(103, 194, 58, 0.05)' }
+              ]
+            }
+          }
+        }
+      ]
+    }
+
+    heatChart.setOption(option, true)
   }
-
-  heatChart.setOption(option)
 }
 
 // 初始化来源图表
@@ -343,6 +585,12 @@ watch(heatData, () => {
   })
 }, { deep: true })
 
+watch(heatChartType, () => {
+  nextTick(() => {
+    updateHeatChart()
+  })
+})
+
 watch(sourceData, () => {
   nextTick(() => {
     updateSourceChart()
@@ -354,22 +602,6 @@ watch(trendData, () => {
     updateTrendChart()
   })
 }, { deep: true })
-
-// 监听数据变化并打印
-watch(
-  [statsData, activityItems, heatData, sourceData, trendData, funnelData],
-  ([newStats, newActivities, newHeat, newSource, newTrend, newFunnel]) => {
-  
-    
-    // 只打印岗位热度数据
-    if (newHeat.length > 0) {
-      console.log('=== 各级岗位热度数据 ===')
-      console.log(newHeat)
-      console.log('=========================')
-    }
-  },
-  { deep: true, flush: 'post' }
-)
 
 // 初始化
 onMounted(() => {
@@ -409,7 +641,7 @@ onUnmounted(() => {
 
 .dashboard-layout {
   display: grid;
-  grid-template-columns: 2fr 3fr;
+  grid-template-columns: 1fr 4fr;
   gap: 24px;
 }
 
@@ -420,102 +652,6 @@ onUnmounted(() => {
   gap: 24px;
 }
 
-/* 数据统计卡片 */
-.stats-cards {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
-  flex: 1;
-  padding: 20px;
-  border-radius: 12px;
-  background: white;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  border-radius: 12px 12px 0 0;
-}
-
-.stat-card.blue::before {
-  background: linear-gradient(90deg, #409EFF, #69B1FF);
-}
-
-.stat-card.orange::before {
-  background: linear-gradient(90deg, #E6A23C, #F7BA2A);
-}
-
-.stat-card.green::before {
-  background: linear-gradient(90deg, #67C23A, #85CE61);
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-}
-
-.stat-card.blue .stat-icon {
-  background: rgba(64, 158, 255, 0.1);
-  color: #409EFF;
-}
-
-.stat-card.orange .stat-icon {
-  background: rgba(230, 162, 60, 0.1);
-  color: #E6A23C;
-}
-
-.stat-card.green .stat-icon {
-  background: rgba(103, 194, 58, 0.1);
-  color: #67C23A;
-}
-
-.stat-content {
-  flex: 1;
-}
-
-.stat-label {
-  font-size: 14px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.stat-change {
-  font-size: 12px;
-}
-
-.stat-change.positive {
-  color: #67C23A;
-}
-
-.stat-change.negative {
-  color: #F56C6C;
-}
-
 /* 活动动态流 */
 .activity-feed {
   background: white;
@@ -523,13 +659,21 @@ onUnmounted(() => {
   padding: 20px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   flex: 1;
+  min-height: 400px;
+}
+
+.feed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .feed-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 .feed-items {
@@ -552,12 +696,13 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   min-width: 50px;
+  flex-shrink: 0;
 }
 
 .feed-content {
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -572,20 +717,34 @@ onUnmounted(() => {
   justify-content: center;
   font-size: 12px;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .feed-text {
-  font-size: 14px;
+  font-size: 13px;
   color: #606266;
+  line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
-.feed-action {
-  color: #909399;
-  font-size: 14px;
+.stage-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+  white-space: nowrap;
 }
 
 .feed-more {
   text-align: center;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 /* 右侧栏样式 */
@@ -593,6 +752,212 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+/* 漏斗看板 */
+.funnel-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+}
+
+.funnel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.funnel-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.funnel-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.funnel-stage {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  transition: border-color 0.2s;
+}
+
+.funnel-stage:hover {
+  border-color: #409EFF;
+}
+
+.stage-header {
+  margin-bottom: 12px;
+}
+
+.stage-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stage-title .el-icon {
+  font-size: 16px;
+  color: #909399;
+}
+
+/* 数量标签样式 */
+.count-tag {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.stage-title .count-tag {
+  margin-left: auto;
+}
+
+/* 查看更多按钮样式 */
+.candidate-more {
+  text-align: center;
+  padding: 8px 0;
+  margin-top: 8px;
+  border-top: 1px dashed #e4e7ed;
+  cursor: pointer;
+}
+
+.stage-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+}
+
+.candidate-card {
+  background: white;
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.candidate-card:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.candidate-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #409EFF;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.candidate-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.candidate-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidate-position {
+  font-size: 11px;
+  color: #909399;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidate-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.candidate-status.pending_review {
+  background: rgba(230, 162, 60, 0.1);
+  color: #E6A23C;
+}
+
+.candidate-status.round_pending {
+  background: rgba(230, 162, 60, 0.1);
+  color: #E6A23C;
+}
+
+.candidate-status.round_scheduled {
+  background: rgba(64, 158, 255, 0.1);
+  color: #409EFF;
+}
+
+.candidate-status.approval_pending {
+  background: rgba(230, 162, 60, 0.1);
+  color: #E6A23C;
+}
+
+.candidate-status.pending_onboard {
+  background: rgba(64, 158, 255, 0.1);
+  color: #409EFF;
+}
+
+.candidate-status.onboarded {
+  background: rgba(103, 194, 58, 0.1);
+  color: #67C23A;
+}
+
+.candidate-status.rejected,
+.candidate-status.abandoned {
+  background: rgba(245, 108, 108, 0.1);
+  color: #F56C6C;
+}
+
+.candidate-days {
+  font-size: 11px;
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.candidate-more {
+  text-align: center;
+  font-size: 12px;
+  color: #909399;
+  padding: 8px;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.candidate-more:hover {
+  background: #f5f7fa;
 }
 
 /* 图表卡片通用样式 */
@@ -603,11 +968,18 @@ onUnmounted(() => {
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
 }
 
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
 .chart-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 /* 图表容器 */
@@ -623,111 +995,35 @@ onUnmounted(() => {
   gap: 24px;
 }
 
-/* 漏斗看板 */
-.funnel-stages {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.funnel-stage {
-  background: #f9f9f9;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.stage-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 12px;
-}
-
-.stage-candidates {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.candidate-card {
-  background: white;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-}
-
-.candidate-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #409EFF;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.candidate-info {
-  flex: 1;
-}
-
-.candidate-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-  margin-bottom: 2px;
-}
-
-.candidate-position {
-  font-size: 12px;
-  color: #909399;
-}
-
-.candidate-status {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 500;
-}
-
-.candidate-status.pending {
-  background: rgba(230, 162, 60, 0.1);
-  color: #E6A23C;
-}
-
-.candidate-status.in-progress {
-  background: rgba(64, 158, 255, 0.1);
-  color: #409EFF;
-}
-
-.candidate-status.completed {
-  background: rgba(103, 194, 58, 0.1);
-  color: #67C23A;
-}
-
 /* 响应式设计 */
+@media (max-width: 1400px) {
+  .funnel-stages {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 1200px) {
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
   
-  .charts-row {
-    grid-template-columns: 1fr;
+  .funnel-stages {
+    grid-template-columns: repeat(2, 1fr);
   }
   
-  .funnel-stages {
+  .charts-row {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 768px) {
-  .stats-cards {
+  .funnel-stages {
+    grid-template-columns: 1fr;
+  }
+  
+  .funnel-header {
     flex-direction: column;
+    align-items: flex-start;
   }
   
   .chart-container {

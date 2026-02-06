@@ -1474,6 +1474,11 @@ const interviewRejectionStmt = {
     )
   },
 
+  // 获取所有拒绝记录
+  getAll: () => {
+    return all('SELECT * FROM interview_rejections ORDER BY created_at DESC')
+  },
+
   // 按拒绝阶段统计
   getStatsByStage: (startDate, endDate) => {
     return all(

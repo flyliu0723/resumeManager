@@ -1,5 +1,6 @@
 const express = require('express')
-const positionResumeController = require('../controller/positionResumeControllerNew')
+const positionResumeController = require('../controller/positionResumeController')
+const { validate } = require('../middleware/validator')
 
 const router = express.Router()
 
@@ -7,13 +8,13 @@ const router = express.Router()
 router.get('/:positionId/resumes', positionResumeController.getByPosition)
 
 // 文件上传（保持原有功能）
-router.post('/:positionId/resumes', positionResumeController.create)
+router.post('/:positionId/resumes', validate('uploadResume'), positionResumeController.create)
 
 // 获取单个详情（支持新状态系统）
 router.get('/position-resumes/:id', positionResumeController.getById)
 
 // 状态流转 - 通用状态变更接口（支持正常流转、拒绝、重新打开）
-router.put('/position-resumes/:id/status', positionResumeController.updateStatus)
+router.put('/position-resumes/:id/status', validate('updateStatus'), positionResumeController.updateStatus)
 
 // 重新打开已拒绝的流程
 router.post('/position-resumes/:id/reopen', positionResumeController.reopen)
